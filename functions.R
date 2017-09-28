@@ -3,19 +3,25 @@
 
 ### Compute conditional mean Y at a particular time for a particular cell,
 ### per the specified model
-conditional.model <- function(a1, r, a2, t, spltime, design, rprob, gammas, rmeans) {
-  if (r == 1) {
-    if (design == 1) {
-      (a1 == 1 & a2 == 1) * rmeans[[1]][]
-    }
-  }
+conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
   if (t <= spltime) {
-    gammas[1] + t * (gammas[2] + gammas[3] * a1)
+    mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
   } else {
-    gammas[1] + spltime * (gammas[2] + gammas[3] * a1) +
-      (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2 + gammas[7] * a1 * (1 - r) * a2) +
-      (t - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2 + gammas[7] * (1 - r) *a1 * a2))
+    if (design == 1) {
+      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + r * (gammas[6] * a2R + gammas[8] * a1 * a2R) / rprob + 
+                               (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
+                               (r - rprob) * (lambdas[1] + lambdas[2] * a1))
+    } else if (design == 2) {
+      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
+        (t - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
+        (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
+    } else if (design == 3) {
+      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR * (1 - r) / (1 - rprob)) +
+        (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
+    }
+    mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + mu
   }
+  mu
 }
 
 ### Custom combine function for the foreach %dopar% loop in sim()
