@@ -64,7 +64,7 @@ cormat.exch <- function(rho, t) {
 }
 
 ### Compute value of the estimating equations
-esteqn.compute <- function(params, d, V, times, spltime) {
+esteqn.compute <- function(d, V, times, spltime, design, gammas) {
   # d is an unreplicated data set in LONG format
   # V is a working covariance matrix
   
@@ -75,7 +75,7 @@ esteqn.compute <- function(params, d, V, times, spltime) {
   } else if (length(V) != 4)
     stop("V must be a single matrix or a list of 4 matrices.")
   
-  mvec <- meanvec(params, times, spltime)
+  mvec <- meanvec(times, spltime, design, gammas)
   deriv <- mod.derivs(times, spltime)
   
   resids <- matrix(rep(d$Y, 4), ncol = 4) -
@@ -105,7 +105,7 @@ esteqn.jacobian <- function(d, V, times, spltime) {
   })) / -length(unique(d$id))
 }
 
-estimate.params <- function(start, maxiter.solver, tol, d, V, times, spltime) {
+estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
   params.hat <- start
   j <- 0
   epsilon <- 10
@@ -113,7 +113,7 @@ estimate.params <- function(start, maxiter.solver, tol, d, V, times, spltime) {
   
   for (j in 1:maxiter.solver) {
     params.hat.new <- params.hat - solve(J) %*%
-      esteqn.compute(params = params.hat, d, V, times, spltime)
+      esteqn.compute(d, V, times, spltime, design, gammas = params.hat)
     epsilon <- norm(params.hat.new - params.hat, type = "F")
     params.hat <- params.hat.new
     if (epsilon <= tol) break
@@ -121,15 +121,15 @@ estimate.params <- function(start, maxiter.solver, tol, d, V, times, spltime) {
   params.hat
 }
 
-estimate.paramvar <- function(d, V, params.hat, times, spltime) {
+estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   n <- length(unique(d$id))
   J <- esteqn.jacobian(d, V, times, spltime)
-  solve(-J) %*%  meat.compute(d, V, params.hat, times, spltime) %*% solve(-J) / n
+  solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
 }
 
-estimate.rho <- function(d, times, spltime, sigma, params, corstr = "exch") {
+estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exch") {
   n <- length(unique(d$id))
-  mvec <- meanvec(params, times, spltime)
+  mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime)
   
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
@@ -194,10 +194,10 @@ estimate.rho <- function(d, times, spltime, sigma, params, corstr = "exch") {
 }
 
 
-estimate.sigma2 <- function(d, times, spltime, params, pool.time = F, pool.dtr = F) {
+estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, pool.dtr = F) {
   
   n <- length(unique(d$id))
-  mvec <- meanvec(params, times, spltime)
+  mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime)
   
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format")
@@ -218,7 +218,7 @@ estimate.sigma2 <- function(d, times, spltime, params, pool.time = F, pool.dtr =
                            x <- list(weightmat[[paste0("dtr", dtr)]])
                            sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
                                                by = list("time" = resids$time), sum)
-                           sumsqrs[, 2] <- sumsqrs[, 2] / (sumwts[, 2] - length(params))
+                           sumsqrs[, 2] <- sumsqrs[, 2] / (sumwts[, 2] - length(gammas))
                            sumsqrs
                          }))
   
@@ -298,10 +298,13 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
     mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
   } else {
     if (design == 1) {
-      mu <- gammas[4] + gammas[5] * a1 + gammas[5] * a2R + gammas[6] * a2NR + gammas[7] * a1 * a2R + gammas[8] * a1 * a2NR
+      if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
+      mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2R + gammas[7] * a2NR + gammas[8] * a1 * a2R + gammas[9] * a1 * a2NR
     } else if (design == 2) {
+      if (length(gammas) != 7) stop("for design 1 gammas must be length 7.")
       mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2NR + gammas[7] * a1 * a2NR
     } else if (design == 3) {
+      if (length(gammas) != 6) stop("for design 3 gammas must be length 6.")
       mu <- gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR
     }
     mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + (t - spltime) * mu
@@ -309,21 +312,36 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
   mu
 }
 
-meanvec <- function(gammas, times, spltime) {
-  do.call(cbind, lapply(1:4, function(dtr) {
-    a1 <- switch(dtr, 1, 1, -1, -1)
-    a2 <- switch(dtr, 1, -1, 1, -1)
+meanvec <- function(times, spltime, design, gammas) {
+  if (design == 1) {
+    a1   <- rep(c(1, -1), each = 4)
+    a2R  <- rep(rep(c(1, -1), each = 2), 2)
+    a2NR <- rep(c(1, -1), 4)
+    ndtr <- 8
+  } else if (design == 2) {
+    a1   <- rep(c(1, -1), each = 2)
+    a2R  <- rep(0, 4)
+    a2NR <- rep(c(1, -1), 2)
+    ndtr <- 4
+  } else if (design == 3) {
+    a1   <- c(1, 1, -1)
+    a2R  <- c(0, 0, 0)
+    a2NR <- c(1, -1, 0)
+    ndtr <- 3
+  }
+  
+  do.call(cbind, lapply(1:ndtr, function(dtr) {
     do.call(rbind, lapply(times, function(t) {
-      marginal.model(gammas, t, spltime, a1, a2)
+      marginal.model(a1[dtr], a2R[dtr], a2NR[dtr], t, spltime, design, gammas)
     }))
   }))
 }
 
-meat.compute <- function(d, V, gammas, times, spltime) {
+meat.compute <- function(d, V, times, spltime, design, gammas) {
   # d should be LONG
   
   n <- length(unique(d$id))
-  mvec <- meanvec(gammas, times, spltime)
+  mvec <- meanvec(times, spltime, design, gammas)
   dmat <- mod.derivs(times, spltime)
   
   resids <- matrix(rep(d$Y, 4), ncol = 4) -
@@ -335,7 +353,7 @@ meat.compute <- function(d, V, gammas, times, spltime) {
   Reduce("+", lapply(split.data.frame(resids, resids$id), function(obs) {
     # compute weighted residual matrix for individual
     # resid <- obs$weight * obs[, grepl("dtr", names(obs))] * 
-    # (obs$Y - meanvec(gammas, times, spltime))
+    # (obs$Y - meanvec(times, spltime, design, gammas))
     # Sum over DTRs
     m <- Reduce("+", lapply(1:4, function(dtr) {
       t(dmat[[dtr]]) %*% solve(V) %*% as.matrix(obs[[paste0("dtr", dtr)]], ncol = 1)
@@ -459,13 +477,12 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                                        times = times, direction = "long", v.names = "Y")
                          d1 <- d1[order(d1$id, d1$time), ]
                          
-                         param.hat <- estimate.params(rep(0, length(gammas)), maxiter.solver, tol,
-                                                      d1, diag(rep(1, length(times))), times, spltime)
+                         param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
                          
-                         sigma2.hat <- estimate.sigma2(d1, times, spltime, param.hat,
+                         sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                        pool.time = constant.var.time, pool.dtr = constant.var.dtr)
                          
-                         rho.hat <- estimate.rho(d1, times, spltime, sqrt(sigma2.hat), param.hat)
+                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
                          
                          # Compute variance matrices for all conditional cells
                          invisible(lapply(split.SMART(d$data), function(x) {
@@ -476,18 +493,18 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                          # Iterate parameter estimation
                          if (corstr %in% c("id", "identity") | (corstr == "exch" & rho == 0)) {
                            outcome.var <- varmat(sigma2.hat, 0, times, "exch")
-                           param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), param.hat, times, spltime)
+                           param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
                            iter <- 1
                          } else if (corstr == "exch" & rho != 0) {
                            outcome.var <- varmat(sigma2.hat, rho.hat, times, "exch")
-                           param.hat <- estimate.params(param.hat, maxiter.solver, tol, d1, outcome.var, times, spltime)
+                           param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
                            # Iterate until estimates of gammas and rho converge
                            for (i in 1:maxiter.solver) {
-                             sigma2.new <- estimate.sigma2(d1, times, spltime, param.hat,
+                             sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                            pool.time = constant.var.time, pool.dtr = constant.var.dtr)
-                             rho.new <- estimate.rho(d1, times, spltime, sqrt(sigma2.hat), param.hat)
+                             rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
                              outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exch")
-                             param.new <- estimate.params(param.hat, maxiter.solver, tol, d1, outcomeVar.new, times, spltime)
+                             param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
                              if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
                                  (rho.new - rho.hat)^2 <= tol) {
                                param.hat <- param.new
@@ -502,7 +519,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                                iter <- i
                              }
                            }
-                           param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), param.hat, times, spltime)
+                           param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
                          }
                          
                          confLB <- L.eos %*% param.hat - sqrt(L.eos %*% param.var %*% L.eos) * qnorm(.975)
