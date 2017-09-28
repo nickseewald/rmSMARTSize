@@ -260,29 +260,19 @@ finalize.results <- function(x) {
               "varmat.0r" = varmat.0r, "varmat.0nr1" = varmat.0nr1, "varmat.0nr0" = varmat.0nr0))
 }
 
-generate.nr.cor <- function(rprob, a1, a2, t1, t2, spltime,
+generate.nr.cor <- function(a1, a2R, a2NR, t1, t2, spltime, design, rprob,
                             sigma.t1, sigma.t2, sigma.t1.r, sigma.t2.r,
-                            rho, rho.r,
-                            rmean.t1 = NULL, rmean.t2 = NULL, gammas) {
-  if (t1 > spltime & is.null(rmean.t1)) stop("Must provide a value for rmean.t1 since t1 is after the second randomization.")
-  if (t2 > spltime & is.null(rmean.t2)) stop("Must provide a value for rmean.t2 since t2 is after the second randomization.")
-  
+                            rho, rho.r, gammas, lambdas) {
   if (t1 == t2) {
     rho <- rho.r <- 1
   }
-  if (t1 <= spltime) {
-    sigma.t1.r <- sigma.t1
-    rmean.t1 <- nrmean.t1 <- generate.nr.mean(marginal.model(gammas, t1, spltime, a1, a2), 0, 0)
-  }
-  if (t2 <= spltime) {
-    sigma.t2.r <- sigma.t2
-    rmean.t2 <- nrmean.t2 <- generate.nr.mean(marginal.model(gammas, t2, spltime, a1, a2), 0, 0)
-  }
-  sigma.t1.nr <- generate.nr.sd(rprob, a1, a2, sigma.t1, sigma.t1.r, t1, spltime, rmean.t1, gammas)
-  sigma.t2.nr <- generate.nr.sd(rprob, a1, a2, sigma.t2, sigma.t2.r, t2, spltime, rmean.t2, gammas)
-  nrmean.t1   <- generate.nr.mean(marginal.model(gammas, t1, spltime, a1, a2), rprob, rmean.t1)
-  nrmean.t2   <- generate.nr.mean(marginal.model(gammas, t2, spltime, a1, a2), rprob, rmean.t2)
+  rmean.t1  <- conditional.model(a1, 1, a2R, a2NR, t1, spltime, design, rprob, gammas, lambdas)
+  rmean.t2  <- conditional.model(a1, 1, a2R, a2NR, t2, spltime, design, rprob, gammas, lambdas)
+  nrmean.t1 <- conditional.model(a1, 0, a2R, a2NR, t1, spltime, design, rprob, gammas, lambdas)
+  nrmean.t2 <- conditional.model(a1, 0, a2R, a2NR, t2, spltime, design, rprob, gammas, lambdas)
   
+  sigma.t1.nr <- generate.nr.sd(a1, a2R, a2NR, t1, spltime, design, rprob, sigma.t1, sigma.t1.r, gammas, lambdas)
+  sigma.t2.nr <- generate.nr.sd(a1, a2R, a2NR, t2, spltime, design, rprob, sigma.t2, sigma.t2.r, gammas, lambdas)
   
   (-1/(sigma.t1.nr * sigma.t2.nr)) * (1 / (1 - rprob)) * 
     (rprob * rho.r * sigma.t1.r * sigma.t2.r -
@@ -290,12 +280,15 @@ generate.nr.cor <- function(rprob, a1, a2, t1, t2, spltime,
        rprob * (1 - rprob) * (rmean.t1 - nrmean.t1) * (rmean.t2 - nrmean.t2))
 }
 
-generate.nr.sd <- function(rprob, a1, a2, sigma, sigma.r, t, spltime, rmean, gammas) {
+generate.nr.sd <- function(a1, a2R, a2NR, t, spltime, design, rprob, 
+                           sigma, sigma.r, gammas, lambdas) {
+  rmean  <- conditional.model(a1, 1, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas)
+  nrmean <- conditional.model(a1, 0, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas)
+  
   if (t <= spltime) {
     sigma
   } else {
-    sqrt((1 / (1 - rprob)) * (sigma^2 - rprob * sigma.r^2 - rprob * (1 - rprob) *
-                                (rmean - generate.nr.mean(marginal.model(gammas, t, spltime, a1, a2), rprob, rmean))^2
+    sqrt((1 / (1 - rprob)) * (sigma^2 - rprob * sigma.r^2 - rprob * (1 - rprob) * (rmean - nrmean)^2
     ))
   }
 }
@@ -576,8 +569,6 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   
   ## Make sure design input is valid
   if (!(design %in% 1:3)) stop("Invalid design choice. Must be one of 1-3.")
-  ## CURRENTLY ONLY DESIGN 2 WORKS!!!
-  if (design != 2) stop("Currently only design 2 has been implemented. Oops!")
   
   ## If sigma is not a vector of length length(times), make it that way (or throw an error)
   if (length(sigma) == 1) {
