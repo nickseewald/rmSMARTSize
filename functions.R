@@ -8,14 +8,17 @@ conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gamma
     mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
   } else {
     if (design == 1) {
+      if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
       mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + r * (gammas[6] * a2R + gammas[8] * a1 * a2R) / rprob + 
                                (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
                                (r - rprob) * (lambdas[1] + lambdas[2] * a1))
     } else if (design == 2) {
+      if (length(gammas) != 8) stop("for design 2, gammas must be length 8.")
       mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
         (t - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
         (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
     } else if (design == 3) {
+      if (length(gammas) != 6) stop("for design 3, gammas must be length 6.")
       mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR * (1 - r) / (1 - rprob)) +
         (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
     }
@@ -287,10 +290,6 @@ generate.nr.cor <- function(rprob, a1, a2, t1, t2, spltime,
        rprob * (1 - rprob) * (rmean.t1 - nrmean.t1) * (rmean.t2 - nrmean.t2))
 }
 
-generate.nr.mean <- function(marginal.mean, rprob, rmean) {
-  (1 / (1 - rprob)) * (marginal.mean - rprob * rmean)
-}
-
 generate.nr.sd <- function(rprob, a1, a2, sigma, sigma.r, t, spltime, rmean, gammas) {
   if (t <= spltime) {
     sigma
@@ -301,11 +300,20 @@ generate.nr.sd <- function(rprob, a1, a2, sigma, sigma.r, t, spltime, rmean, gam
   }
 }
 
-marginal.model <- function(gammas, t, spltime, a1, a2) {
-  gammas[1] + (t <= spltime) * (gammas[2] * t + gammas[3] * t * a1) +
-    (t > spltime) * (spltime * (gammas[2] + gammas[3] * a1) + 
-                       (t - spltime) * (gammas[4] + gammas[5] * a1 + 
-                                          gammas[6] * a2 + gammas[7] * a1 * a2))
+marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
+  if (t <= spltime) {
+    mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
+  } else {
+    if (design == 1) {
+      mu <- gammas[4] + gammas[5] * a1 + gammas[5] * a2R + gammas[6] * a2NR + gammas[7] * a1 * a2R + gammas[8] * a1 * a2NR
+    } else if (design == 2) {
+      mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2NR + gammas[7] * a1 * a2NR
+    } else if (design == 3) {
+      mu <- gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR
+    }
+    mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + (t - spltime) * mu
+  }
+  mu
 }
 
 meanvec <- function(gammas, times, spltime) {
@@ -534,7 +542,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
 }
 
 
-SMART.generate <- function(n, times, spltime, r1, r0, gammas, mean.r1, mean.r0, design,
+SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                            sigma, sigma.r1, sigma.r0, corstr = "identity",
                            rho = NULL, rho.r1 = rho, rho.r0 = rho) {
   
@@ -577,26 +585,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, mean.r1, mean.r0, 
   } else if (length(sigma) != length(times)) {
     stop("sigma must either be length-1 or the same length as times.")
   }
-  
-  ## Check to make sure rmeans is a list of the correct length (depends on design)
-  if (!is.list(rmeans)) stop("rmeans must be a list")
-  if (design == 1 & length(rmeans) != 4) stop("For design 1, you must provide rmeans for 4 groups of responders.")
-  if (design == 2 & length(rmeans) != 2) stop("For design 2, you must provide rmeans for 2 groups of responders.")
-  if (design == 3 & length(rmeans) != 2) stop("For design 3, you must provide rmeans for 2 groups of responders.")
-  
-  ## Handle mean.r1, mean.r0 inputs in case sum(times > spltime) > 1 
-  ## (i.e., more than one measurement after re-randomization)
-  if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
-    mean.r1 <- rep(mean.r1, sum(times > spltime))
-  }
-  if (length(mean.r0) == 1 & sum(times > spltime) > 1) {
-    mean.r0 <- rep(mean.r0, sum(times > spltime))
-  }
-  if (length(mean.r1) != length(times)) 
-    sigma.r1 <- c(sigma[times <= spltime], sigma.r1)
-  if (length(sigma.r0) != length(times)) 
-    sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
-  
+
   ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
   ## (i.e., more than one measurement after re-randomization)
   if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
@@ -611,44 +600,45 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, mean.r1, mean.r0, 
     sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
   
   ## Generate treatment allocations and response
-  d <- data.frame("id" = 1:n,
-                  "A1" = 2 * rbinom(n, 1, .5) - 1,
-                  "R" = NA,
-                  "A2" = 0)
+  d <- data.frame("id"   = 1:n,
+                  "A1"   = 2 * rbinom(n, 1, .5) - 1,
+                  "R"    = NA,
+                  "A2R"  = 0,
+                  "A2NR" = 0)
   
   d$R[d$A1 ==  1] <- rbinom(sum(d$A1 == 1), 1, r1)
   d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
   
   if (design == 1) {
-    d$A2[d$A1 == 1  & d$R == 1] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 1), 1, .5) - 1
-    d$A2[d$A1 == 1  & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
-    d$A2[d$A1 == -1 & d$R == 1] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 1), 1, .5) - 1
-    d$A2[d$A1 == -1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
+    d$A2R[d$A1 == 1  & d$R == 1] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 1), 1, .5) - 1
+    d$A2R[d$A1 == -1 & d$R == 1] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 1), 1, .5) - 1
+    d$A2NR[d$A1 == 1  & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
+    d$A2NR[d$A1 == -1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
     d$weight <- 4
     
-    d$dtr1 <- as.numeric(with(d, A1 ==  1 & ((R * A2 ==  1) | (R == 0 & A2 ==  1))))
-    d$dtr2 <- as.numeric(with(d, A1 ==  1 & ((R * A2 ==  1) | (R == 0 & A2 == -1))))
-    d$dtr3 <- as.numeric(with(d, A1 ==  1 & ((R * A2 == -1) | (R == 0 & A2 ==  1))))
-    d$dtr4 <- as.numeric(with(d, A1 ==  1 & ((R * A2 == -1) | (R == 0 & A2 == -1))))
-    d$dtr5 <- as.numeric(with(d, A1 == -1 & ((R * A2 ==  1) | (R == 0 & A2 ==  1))))
-    d$dtr6 <- as.numeric(with(d, A1 == -1 & ((R * A2 ==  1) | (R == 0 & A2 == -1))))
-    d$dtr7 <- as.numeric(with(d, A1 == -1 & ((R * A2 == -1) | (R == 0 & A2 ==  1))))
-    d$dtr8 <- as.numeric(with(d, A1 == -1 & ((R * A2 == -1) | (R == 0 & A2 == -1))))
+    d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
+    d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
   } else if (design == 2) {
-    d$A2[d$A1 == 1  & d$R == 0]  <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
-    d$A2[d$A1 == -1 & d$R == 0]  <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
+    d$A2NR[d$A1 == 1  & d$R == 0]  <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
+    d$A2NR[d$A1 == -1 & d$R == 0]  <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
     d$weight <- 2 * (d$R + 2 * (1 - d$R))
     
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2 ==  1))))
-    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2 == -1))))
-    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2 ==  1))))
-    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2 == -1))))
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
   } else {
-    d$A2[d$A1 == 1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1 & d$R == 0), 1, .5) - 1
+    d$A2NR[d$A1 == 1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1 & d$R == 0), 1, .5) - 1
     d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
     
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2 ==  1))))
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2 == -1))))
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
     d$dtr1 <- as.numeric(with(d, (A1 == -1)))
   }
   
@@ -660,20 +650,16 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, mean.r1, mean.r0, 
   ## Generate Y's at their (conditional) means
   d <- do.call("rbind", lapply(split.SMART(d), function(z) {
     x <- do.call("data.frame", lapply(times, function(time) {
-      if (unique(z$R) == 1) {
-        if (time <= spltime) marginal.model(gammas, time, spltime, z$A1, z$A2)
-        else rep(get(paste0("mean.r", (1/2) * (unique(z$A1) + 1)))[which(times == time) - which(times == spltime)], dim(z)[1])
-      } else {
-        if (time <= spltime) marginal.model(gammas, time, spltime, z$A1, z$A2)
-        else
-          generate.nr.mean(marginal.model(gammas, time, spltime, z$A1, z$A2), rprob,
-                           get(paste0("mean.r", (1/2) * (unique(z$A1) + 1)))[which(times == time) - which(times == spltime)])
-      }
+      conditional.model(z$A1, z$R, z$A2R, z$A2NR,
+                        time, spltime, design, 
+                        get(paste0("r", (1 + unique(z$A1)) / 2)), 
+                        gammas, lambdas)
     }))
     names(x) <- sapply(times, function(t) paste0("Y", t))
     z <- cbind(z, x)
-    z
   }))
+  d <- d[order(d$id), ]
+  rownames(d) <- d$id
   
   ## Compute conditional standard deviations for non-responders
   if (design == 2) {
@@ -846,8 +832,8 @@ split.SMART <- function(d, marginal = FALSE) {
     })
     names(l) <- grep("dtr", names(d), value = TRUE)
   } else {
-    l <- split.data.frame(d, list(d$A1, d$R, d$A2))
-    x <- apply(unique(subset(d, select = c("A1", "R", "A2"))), 1, function(v) {
+    l <- split.data.frame(d, list(d$A1, d$R, d$A2R, d$A2NR))
+    x <- apply(unique(subset(d, select = c("A1", "R", "A2R", "A2NR"))), 1, function(v) {
       paste(v, collapse = ".")
     })
     l <- lapply(1:length(x), function(i) l[[x[i]]])
