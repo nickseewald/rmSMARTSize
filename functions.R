@@ -63,6 +63,23 @@ cormat.exch <- function(rho, t) {
   m
 }
 
+dtrIndex <- function(design) {
+  if (design == 1) {
+    a1   <- rep(c(1, -1), each = 4)
+    a2R  <- rep(rep(c(1, -1), each = 2), 2)
+    a2NR <- rep(c(1, -1), 4)
+  } else if (design == 2) {
+    a1   <- rep(c(1, -1), each = 2)
+    a2R  <- rep(0, 4)
+    a2NR <- rep(c(1, -1), 2)
+  } else if (design == 3) {
+    a1   <- c(1, 1, -1)
+    a2R  <- c(0, 0, 0)
+    a2NR <- c(1, -1, 0)
+  }
+  return(list("a1" = a1, "a2R" = a2R, "a2NR" = a2NR))
+}
+
 ### Compute value of the estimating equations
 esteqn.compute <- function(d, V, times, spltime, design, gammas) {
   # d is an unreplicated data set in LONG format
@@ -313,26 +330,10 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
 }
 
 meanvec <- function(times, spltime, design, gammas) {
-  if (design == 1) {
-    a1   <- rep(c(1, -1), each = 4)
-    a2R  <- rep(rep(c(1, -1), each = 2), 2)
-    a2NR <- rep(c(1, -1), 4)
-    ndtr <- 8
-  } else if (design == 2) {
-    a1   <- rep(c(1, -1), each = 2)
-    a2R  <- rep(0, 4)
-    a2NR <- rep(c(1, -1), 2)
-    ndtr <- 4
-  } else if (design == 3) {
-    a1   <- c(1, 1, -1)
-    a2R  <- c(0, 0, 0)
-    a2NR <- c(1, -1, 0)
-    ndtr <- 3
-  }
-  
-  do.call(cbind, lapply(1:ndtr, function(dtr) {
+  A <- dtrIndex(design)
+  do.call(cbind, lapply(1:length(A$a1), function(dtr) {
     do.call(rbind, lapply(times, function(t) {
-      marginal.model(a1[dtr], a2R[dtr], a2NR[dtr], t, spltime, design, gammas)
+      marginal.model(A$a1[dtr], A$a2R[dtr], A$a2NR[dtr], t, spltime, design, gammas)
     }))
   }))
 }
@@ -416,6 +417,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
                 L.eos = NULL, L.auc = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE,
+                uneqVarDTR = NULL,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                 notify = FALSE, pbIdentifier = NULL) {
   
@@ -442,6 +444,9 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   
   ## Handle correlation structure
   if (corstr %in% c("id", "identity")) rho <- rho.r1 <- rho.r0 <- 0
+  
+  ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
+  if (design == 1) constant.var.dtr <- FALSE
   
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
@@ -670,6 +675,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   rownames(d) <- d$id
   
   ## Compute conditional standard deviations for non-responders
+  lapply(1:length(dtrIndex(design)$a1), function(dtr) {
+    
+  })
   if (design == 2) {
     invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2"))), 1, function(x) {
       if (design == 1) {
@@ -679,7 +687,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       }
       assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[2] + 1) / 2),
              unname(sapply(1:length(times), function(i) {
-               generate.nr.sd(get(paste0("r", (x[1] + 1) / 2)), x[1], x[2], sigma[i], 
+               generate.nr.sd(get(paste0("r", (x[1] + 1) / 2)), x[1], x[2], sigma[i],
                               get(paste0("sigma.r", (x[1] + 1) / 2))[i], times[i], spltime, lambdas, gammas)
              })),
              envir = .GlobalEnv)
@@ -711,7 +719,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   d <-
     do.call("rbind", lapply(split.SMART(d), function(x) {
       a1ind <- as.character((unique(x$A1) + 1) / 2)
-      a2ind <- as.character((unique(x$A2) + 1) / 2)
+      a2Rind <- as.character((unique(x$A2) + 1) / 2)
       if (unique(x$R) == 1) {
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
           mvrnorm(
@@ -725,15 +733,15 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
         cormat.nr <- cormat.exch(rho, length(times))
         for (i in 1:dim(m)[1]) {
           cormat.nr[m[i, 1], m[i, 2]] <- 
-            generate.nr.cor(rprob = get(paste0("r", a1ind)),
-                            a1 = unique(x$A1), a2 = unique(x$A2),
+            generate.nr.cor(a1 = unique(x$A1), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = design, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
                             sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
                             sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
                             rho = cormat.nr[m[i, 1], m[i, 2]],
                             rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
-                            lambdas = lambdas, gammas = gammas)
+                            gammas = gammas, lambdas = lambdas)
         }
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
           mvrnorm(
