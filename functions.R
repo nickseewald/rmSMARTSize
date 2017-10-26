@@ -13,7 +13,7 @@ conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gamma
                                (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
                                (r - rprob) * (lambdas[1] + lambdas[2] * a1))
     } else if (design == 2) {
-      if (length(gammas) != 8) stop("for design 2, gammas must be length 8.")
+      if (length(gammas) != 7) stop("for design 2, gammas must be length 7.")
       mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
         (t - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
         (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
@@ -29,25 +29,19 @@ conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gamma
 
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
-  pval         <- c(list1$pval, list2$pval)
-  param.hat    <- rbind(list1$param.hat, list2$param.hat)
-  sigma2.hat   <- rbind(list1$sigma2.hat, list2$sigma2.hat)
-  param.var    <- Reduce("+", list(list1$param.var, list2$param.var))
-  rho.hat      <- c(list1$rho.hat, list2$rho.hat)
-  coverage     <- list1$coverage + list2$coverage
-  iter         <- c(list1$iter, list2$iter)
-  valid        <- list1$valid + list2$valid
-  varmat.1r    <- list1$varmat.1r + list2$varmat.1r
-  varmat.1nr1  <- list1$varmat.1nr1 + list2$varmat.1nr1
-  varmat.1nr0  <- list1$varmat.1nr0 + list2$varmat.1nr0
-  varmat.0r    <- list1$varmat.0r + list2$varmat.0r
-  varmat.0nr1  <- list1$varmat.0nr1 + list2$varmat.0nr1
-  varmat.0nr0  <- list1$varmat.0nr0 + list2$varmat.0nr0
+  pval       <- c(list1$pval, list2$pval)
+  param.hat  <- rbind(list1$param.hat, list2$param.hat)
+  sigma2.hat <- rbind(list1$sigma2.hat, list2$sigma2.hat)
+  param.var  <- Reduce("+", list(list1$param.var, list2$param.var))
+  rho.hat    <- c(list1$rho.hat, list2$rho.hat)
+  coverage   <- list1$coverage + list2$coverage
+  iter       <- c(list1$iter, list2$iter)
+  valid      <- list1$valid + list2$valid
+  condVars   <- Map("+", list1$condVars, list2$condVars)
   
   return(list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
               "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-              "varmat.1r" = varmat.1r, "varmat.1nr1" = varmat.1nr1, "varmat.1nr0" = varmat.1nr0,
-              "varmat.0r" = varmat.0r, "varmat.0nr1" = varmat.0nr1, "varmat.0nr0" = varmat.0nr0))
+              "condVars" = condVars))
 }
 
 ### Construct a t-by-t AR(1) correlation matrix with parameter rho
@@ -203,7 +197,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
                         2, unique)
     
     # Construct denominator for estimator of alpha in exchangeable corstr
-    denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(params)
+    denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
     
     # Average over DTRs
     return(mean(numerator/denominator))
@@ -254,27 +248,29 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
 
 # Clean up output of combine.results, to be used in the foreach loop after combining everything
 finalize.results <- function(x) {
-  param.hat    <- apply(as.matrix(x$param.hat), 2, mean)
-  sigma2.hat   <- apply(as.matrix(x$sigma2.hat), 2, mean)
-  param.var    <- x$param.var / x$valid
+  param.hat     <- apply(as.matrix(x$param.hat), 2, mean)
+  sigma2.hat    <- apply(as.matrix(x$sigma2.hat), 2, mean)
+  param.var     <- x$param.var / x$valid
   param.var.est <- apply(as.matrix(x$param.hat), 2, var)
-  rho.hat      <- mean(x$rho.hat)
-  coverage     <- as.numeric(x$coverage / x$valid)
-  varmat.1r    <- x$varmat.1r / x$valid
-  varmat.1nr1  <- x$varmat.1nr1 / x$valid
-  varmat.1nr0  <- x$varmat.1nr0 / x$valid
-  varmat.0r    <- x$varmat.0r / x$valid
-  varmat.0nr1  <- x$varmat.0nr1 / x$valid
-  varmat.0nr0  <- x$varmat.0nr0 / x$valid
+  rho.hat       <- mean(x$rho.hat)
+  coverage      <- as.numeric(x$coverage / x$valid)
+  condVars      <- lapply(x$condVars, function(v) v / x$valid)
   
   cat("Finishing...\n")
   
   return(list("n" = x$n, "alpha" = x$alpha, "power.target" = x$power.target, "delta" = x$delta,
               "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
-              "sigma2.hat" = sigma2.hat, "iter" = x$iter,
-              "param.var" = param.var, "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage,
-              "varmat.1r" = varmat.1r, "varmat.1nr1" = varmat.1nr1, "varmat.1nr0" = varmat.1nr0,
-              "varmat.0r" = varmat.0r, "varmat.0nr1" = varmat.0nr1, "varmat.0nr0" = varmat.0nr0))
+              "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var, 
+              "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars))
+}
+
+generate.sd <- function(sigma, a1, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
+  dtrs <- dtrIndex(design)
+  mu <- sapply(1:length(dtrs$a1), function(i) {
+    c(conditional.model(dtrs$a1[i], 1, dtrs$a2R[i], 0, t, spltime, design, rprob, gammas, lambdas),
+    conditional.model(dtrs$a1[i], 0, 0, dtrs$a2NR[i], t, spltime, design, rprob, gammas, lambdas))
+  })
+  stage1 <- (a1 + 1) / 2
 }
 
 generate.nr.cor <- function(a1, a2R, a2NR, t1, t2, spltime, design, rprob,
@@ -417,9 +413,9 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
                 L.eos = NULL, L.auc = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE,
-                uneqVarDTR = NULL,
+                uneqVarDTR = NULL, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                notify = FALSE, pbIdentifier = NULL) {
+                notify = FALSE, pbDevice = NULL, pbIdentifier = NULL) {
   
   # n:        number of participants in trial
   # gammas:   Parameters from marginal mean model
@@ -459,7 +455,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE) %dorng% { 
                        
                        d <- SMART.generate(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                           rho, rho.r1, rho.r0)
+                                           rho, rho.r1, rho.r0, perfect = perfect)
                        if (d$valid == FALSE) {
                          return(list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
                               "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
@@ -470,12 +466,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                                                               (4 * (1 - constant.var.dtr) * constant.var.time) +
                                                               (constant.var.time * constant.var.dtr))),
                               "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
-                              "varmat.1r" = matrix(0, ncol = length(times), nrow = length(times)),
-                              "varmat.1nr1" = matrix(0, ncol = length(times), nrow = length(times)),
-                              "varmat.1nr0" = matrix(0, ncol = length(times), nrow = length(times)),
-                              "varmat.0r" = matrix(0, ncol = length(times), nrow = length(times)),
-                              "varmat.0nr1" = matrix(0, ncol = length(times), nrow = length(times)),
-                              "varmat.0nr0" = matrix(0, ncol = length(times), nrow = length(times)),
+                              "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
                               "alpha" = alpha, "power.target" = power))
                        } else {
                          d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
@@ -490,10 +481,9 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                          rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
                          
                          # Compute variance matrices for all conditional cells
-                         invisible(lapply(split.SMART(d$data), function(x) {
-                           assign(paste0("varmat.", (unique(x$A1) + 1) / 2, switch(unique(x$R) + 1, paste0("nr", (unique(x$A2) + 1) / 2), "r")),
-                                  var(subset(x, select = grep("Y", names(x), value = TRUE))), envir = .GlobalEnv)
-                         }))
+                         condVars <- lapply(split.SMART(d$data), function(x) {
+                           var(subset(x, select = grep("Y", names(x), value = TRUE)))
+                         })
                          
                          # Iterate parameter estimation
                          if (corstr %in% c("id", "identity") | (corstr == "exch" & rho == 0)) {
@@ -535,9 +525,8 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                          pval <- 1 - pnorm(as.numeric((L.eos %*% param.hat) / sqrt(L.eos %*% param.var %*% L.eos)))
                          
                          list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
-                              "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage, "iter" = iter,
-                              "varmat.1r" = varmat.1r, "varmat.1nr1" = varmat.1nr1, "varmat.1nr0" = varmat.1nr0,
-                              "varmat.0r" = varmat.0r, "varmat.0nr1" = varmat.0nr1, "varmat.0nr0" = varmat.0nr0)
+                              "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
+                              "iter" = iter, "condVars" = condVars)
                        }
                      }
   pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), "n = ", n,
@@ -546,7 +535,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                           switch(corstr, "id" =, "identity" = "identity", 
                                  "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")))
   if (notify) {
-    pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = c("moto", "spectre"))
+    pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = pbDevice)
   }
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
@@ -559,7 +548,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
 
 SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                            sigma, sigma.r1, sigma.r0, corstr = "identity",
-                           rho = NULL, rho.r1 = rho, rho.r0 = rho) {
+                           rho = NULL, rho.r1 = rho, rho.r0 = rho, perfect = FALSE) {
   
   # n:        number of participants in trial
   # gammas:   Parameters from marginal mean model
@@ -607,10 +596,12 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   if (length(sigma.r0) == 1 & sum(times > spltime) > 1) {
     sigma.r0 <- rep(sigma.r0, sum(times > spltime))
   }
-  if (length(sigma.r1) != length(times)) 
+  if (length(sigma.r1) != length(times)) {
     sigma.r1 <- c(sigma[times <= spltime], sigma.r1)
-  if (length(sigma.r0) != length(times)) 
+  }
+  if (length(sigma.r0) != length(times)) {
     sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
+  }
   
   ## Generate treatment allocations and response
   d <- data.frame("id"   = 1:n,
@@ -675,20 +666,16 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   rownames(d) <- d$id
   
   ## Compute conditional standard deviations for non-responders
-  lapply(1:length(dtrIndex(design)$a1), function(dtr) {
-    
-  })
+  
   if (design == 2) {
-    invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2"))), 1, function(x) {
-      if (design == 1) {
-        rmeanIndex <- (a1 == 1 & a2 == 1) * 1 + (a1 == 1 & a2 == -1) * 2 + (a1 == -1 & a2 == 1) * 3 + (a1 == -1 & a2 == -1) * 4
-      } else if (design %in% c(2, 3)) {
-        rmeanIndex <- (a1 == 1) * 1 + (a1 == -1) * 2
-      }
-      assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[2] + 1) / 2),
+    invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
+      assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[3] + 1) / 2),
              unname(sapply(1:length(times), function(i) {
-               generate.nr.sd(get(paste0("r", (x[1] + 1) / 2)), x[1], x[2], sigma[i],
-                              get(paste0("sigma.r", (x[1] + 1) / 2))[i], times[i], spltime, lambdas, gammas)
+               generate.nr.sd(a1 = x[1], a2R = x[2], a2NR = x[3], t = times[i], spltime, design = 2, 
+                              rprob = get(paste0("r", (x[1] + 1) / 2)),
+                              sigma = sigma[i],
+                              sigma.r = get(paste0("sigma.r", (x[1] + 1) / 2))[i],
+                              gammas, lambdas)
              })),
              envir = .GlobalEnv)
     }))
@@ -718,8 +705,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   
   d <-
     do.call("rbind", lapply(split.SMART(d), function(x) {
-      a1ind <- as.character((unique(x$A1) + 1) / 2)
-      a2Rind <- as.character((unique(x$A2) + 1) / 2)
+      a1ind   <- as.character((unique(x$A1) + 1) / 2)
+      a2Rind  <- as.character((unique(x$A2R) + 1) / 2)
+      a2NRind <- as.character((unique(x$A2NR) + 1) / 2)
       if (unique(x$R) == 1) {
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
           mvrnorm(
@@ -747,9 +735,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
           mvrnorm(
             dim(x)[1],
             mu = rep(0, length(times)),
-            Sigma = diag(get(paste0("sigma.nr", a1ind, a2ind))) %*%
+            Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
               get(paste0("cormat.", switch(unique(x$R) + 1, "nr", paste0("r", a1ind)))) %*%
-              diag(get(paste0("sigma.nr", a1ind, a2ind)))
+              diag(get(paste0("sigma.nr", a1ind, a2NRind)))
           )
       }
       x
