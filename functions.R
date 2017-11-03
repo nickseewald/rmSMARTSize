@@ -731,27 +731,6 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                                 sigma.cond = get(paste0("sigma.r", a1ind, "0"))[i], gammas, lambdas)
              }), envir = .GlobalEnv)
     }))
-    
-      invisible(apply(dtrs, 2, function(dtr) {
-      a1ind   <- (dtr[1] + 1) / 2
-      a2Rind  <- (dtr[2] + 1) / 2 
-      a2NRind <- (dtr[3] + 1) / 2
-      dtrNum <- which((dtrs[1, ] == dtr[1]) + 
-                          (dtrs[2, ] == dtr[2]) +
-                          (dtrs[3, ] == dtr[3]) == 3)
-      sapply(c(0, 1), function(r) {
-        assign(paste0("sigma.", switch(r + 1, "nr", "r"), a1ind, ifelse(r == 1, a2Rind, a2NRind)),
-               unname(sapply(times, function(t) {
-                 generate.cond.sd(a1 = dtr[1], r = r, a2R = dtr[2], a2NR = dtr[3], t = t, spltime, design = 1, rprob = rprob,
-                                  sigma = ifelse(dtrNum %in% uneqvarDTRindex, 
-                                                 uneqvarDTR.sd[[which(dtrNum == uneqvarDTRindex)]][which(times == t)], 
-                                                 sigma[which(times == t)]), 
-                                  sigma.cond = get(paste0("sigma.", ifelse(r == 1, "nr", "r"), a1ind, ifelse(r == 1, a2NRind, a2Rind))),
-                                  gammas = gammas, lambdas = lambdas)
-               })),
-               envir = .GlobalEnv)
-      })
-    }))
   } else if (design == 2) {
     invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
       assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[3] + 1) / 2),
@@ -798,9 +777,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
           mvrnorm(
             dim(x)[1],
             mu = rep(0, length(times)),
-            Sigma = diag(get(paste0("sigma.r", a1ind))) %*%
-              get(paste0("cormat.r", (unique(x$A1 + 1) / 2))) %*%
-              diag(get(paste0("sigma.r", a1ind)))
+            Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+              get(paste0("cormat.r", a1ind, a2Rind)) %*%
+              diag(get(paste0("sigma.r", a1ind, a2Rind)))
           )
       } else {
         cormat.nr <- cormat.exch(rho, length(times))
