@@ -90,4 +90,37 @@ pbPost("note", "All done!",
        paste("All simulations are complete for effect size 0.5."),
        recipients = c('pixel', 'spectre'))
 
+
+##### Violation of S1(a) #####
+### Effect size: 0.3
+gammas <- c(33.5, -0.8, 0.9, -0.8, 0.4, -0.4, 0.1)
+lambdas <- c(0.1, -0.5)
+
+sigma <- 6
+sigma.r1 <- 5.9
+sigma.r0 <- 5.75
+
+lapply(list(c(0, 0, 0), c(0.3, 0.31, .32), c(.6, .62, .63), c(.8, .82, .83)), function(corr) {
+  for (resp in c(0.4, 0.6)) {
+    for (sharp in c(FALSE, TRUE)) {
+      r1 <- r0 <- resp
+      set.seed(seed)
+      assign(paste0("d2small.r", resp * 10, ".exch", corr * 10, ifelse(sharp, ".sharp", ""), ".viol1"),
+             sim(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0, times = times, spltime = spltime,
+                 alpha = .05, power = .8, delta = 0.3, design = 2, conservative = !sharp,
+                 sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
+                 constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
+                 corstr = "exch", rho = corr[1], rho.r1 = corr[2], rho.r0 = corr[3],
+                 niter = niter, notify = TRUE, pbDevice = c("pixel", "spectre"),
+                 pbIdentifier = paste0("Violate S1(a)\n",
+                                       ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
+      save.image(file = "simsDesign2.RData")
+    }
+  }
+})
+
+pbPost("note", "All done!",
+       paste("All simulations are complete for effect size 0.3 with the violation of S1(a)."),
+       recipients = c('pixel', 'spectre'))
+
 stopCluster(clus)
