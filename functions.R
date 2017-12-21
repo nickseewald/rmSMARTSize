@@ -293,8 +293,6 @@ generate.cond.cor <- function(a1, r, a2R, a2NR, t1, t2, spltime, design, rprob,
   sigma.t1.cond <- generate.cond.sd(a1, r, a2R, a2NR, t1, spltime, design, rprob, sigma.t1, sigma.t1.ref, gammas, lambdas)
   sigma.t2.cond <- generate.cond.sd(a1, r, a2R, a2NR, t2, spltime, design, rprob, sigma.t2, sigma.t2.ref, gammas, lambdas)
   
-  cat((rho.ref * sigma.t1.ref * sigma.t2.ref))
-  
   (1/(r * rprob + (1 - r) * (1 - rprob))) * # upweight by appropriate response probability
     ((rho * sigma.t1 * sigma.t2) - # compute marginal covariance
        (r * (1 - rprob) + (1 - r) * rprob) * # weight by appropriate response probability
@@ -456,10 +454,13 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   ## TODO: Finish input handling
   
   # Handle uneqsdDTR
-  if (design == 1 & is.null(uneqsdDTR)) 
-    stop("For design I, you must provide a list of vectors of (a1, a2R, a2NR) for DTRs which do not have the same variance as others.")
-  if (design == 1 & !is.list(uneqsdDTR))
-    stop("uneqsdDTR must be a list.")
+  if (design == 1 & is.null(uneqsdDTR)) {
+    if (length(unique(marginal.model(dtrIndex(1)$a1, dtrIndex(1)$a2R, dtrIndex(1)$a2NR, 2, spltime, 1, gammas))) == 8)
+      stop(paste("For design I, you must provide a list of vectors of (a1, a2R, a2NR) for DTRs which do not have the same variance as others.\n",
+               "Alternatively, you may specify gammas such that there are only 4 unique DTR means (2 per first-stage treatment)."))
+  }
+  if (design == 1 & !is.null(uneqsdDTR) & !is.list(uneqsdDTR))
+    stop("uneqsdDTR must be either NULL or a list.")
   
   ## Handle correlation structure
   if (corstr %in% c("id", "identity")) rho <- rho.r1 <- rho.r0 <- 0
@@ -694,19 +695,21 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   ## Compute conditional standard deviations for non-responders
   if (design == 1) {
     dtrs <- do.call("rbind", dtrIndex(design))
-    # Determine which DTRs are the unequal variance ones
-    uneqsdDTRindex <- sapply(1:2, function(i) 
-      which((dtrs[1, ] == uneqsdDTR[[i]][1]) + 
-              (dtrs[2, ] == uneqsdDTR[[i]][2]) +
-              (dtrs[3, ] == uneqsdDTR[[i]][3]) == 3)
-    )
-    # Compute the standard deviation for times after spltime in the DTR with unequal variance
-    uneqsd <- lapply(uneqsdDTR, function(dtr) {
-      sapply(times, function(t) {
-        generate.sd(sigma[which(times == t)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], t = t, spltime = spltime, 
-                    design, rprob = get(paste0("r", (dtr[1] + 1) / 2)), gammas, lambdas)
+    if (!is.null(uneqsdDTR)) {
+      # Determine which DTRs are the unequal variance ones
+      uneqsdDTRindex <- sapply(1:2, function(i) 
+        which((dtrs[1, ] == uneqsdDTR[[i]][1]) + 
+                (dtrs[2, ] == uneqsdDTR[[i]][2]) +
+                (dtrs[3, ] == uneqsdDTR[[i]][3]) == 3)
+      )
+      # Compute the standard deviation for times after spltime in the DTR with unequal variance
+      uneqsd <- lapply(uneqsdDTR, function(dtr) {
+        sapply(times, function(t) {
+          generate.sd(sigma[which(times == t)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], t = t, spltime = spltime, 
+                      design, rprob = get(paste0("r", (dtr[1] + 1) / 2)), gammas, lambdas)
+        })
       })
-      })
+    }
     sigma.r11 <- sigma.r1
     sigma.r01 <- sigma.r0
     # rm("sigma.r1", "sigma.r0")
@@ -718,9 +721,11 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1, t = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, 1, 1)) == 3)) > 0,
-                                               uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                 sum(dtr == c(2 * a1ind -1, 1, 1)) == 3))]][i],
+                                sigma = ifelse(!is.null(uneqsdDTR), 
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, 1, 1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, 1, 1)) == 3))]][i],
+                                                      sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.r", a1ind, "1"))[i], gammas, lambdas)
                }), envir = .GlobalEnv)
@@ -728,9 +733,11 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, 1)) == 3)) > 0,
-                                               uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                 sum(dtr == c(2 * a1ind -1, -1, 1)) == 3))]][i],
+                                sigma = ifelse(!is.null(uneqsdDTR),
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, 1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, -1, 1)) == 3))]][i],
+                                                      sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.nr", a1ind, "1"))[i], gammas, lambdas)
              }), envir = .GlobalEnv)
@@ -738,13 +745,16 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, -1)) == 3)) > 0,
-                                               uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                 sum(dtr == c(2 * a1ind -1, -1, -1)) == 3))]][i],
+                                sigma = ifelse(!is.null(uneqsdDTR),
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, -1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, -1, -1)) == 3))]][i],
+                                                      sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.r", a1ind, "0"))[i], gammas, lambdas)
              }), envir = .GlobalEnv)
     }))
+    rm(sigma.r1, sigma.r0)
   } else if (design == 2) { ## Generate conditional standard deviations in Design 2
     if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
       stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
@@ -825,7 +835,44 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   if (design == 1) {
     cormat.r11 <- cormat.r1
     cormat.r01 <- cormat.r0
+    
+    for (a1ind in c(0, 1)) {
+      if (corstr %in% c("exch", "id")) {
+        x <- cormat.exch(rho, length(times))
+      } else if (corstr == "ar1") {
+        x <- cormat.ar1(rho, length(times))
+      }
+      for(i in 1:dim(m)[1]) {
+        x[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = r1,
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = sigma.r11[m[i, 1]],
+                            sigma.t2.ref = sigma.r11[m[i, 2]],
+                            rho = rho,
+                            rho.ref = cormat.r11[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, "1"), x)
+    }
+    
+    cormat.nr11 <- cormat.exch(rho, length(times))
+    for (i in 1:dim(m)[1]) {
+      cormat.nr11[m[i, 1], m[i, 2]] <- 
+        generate.cond.cor(a1 = 1, r = 0, a2R = 1, a2NR = 1,
+                          t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                          design = 1, rprob = r1,
+                          sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                          sigma.t1.ref = sigma.r11[m[i, 1]],
+                          sigma.t2.ref = sigma.r11[m[i, 2]],
+                          rho = rho,
+                          rho.ref = cormat.r11[m[i, 1], m[i, 2]],
+                          gammas = gammas, lambdas = lambdas)
+    }
+    
     # FIXME: Finish this!
+    
   } else if (design == 2) {
     cormat.r10 <- cormat.r1
     cormat.r00 <- cormat.r0
@@ -837,6 +884,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       a1ind   <- as.character((unique(x$A1) + 1) / 2)
       a2Rind  <- ifelse(unique(x$A2R) == 0, "0", as.character((unique(x$A2R) + 1) / 2))
       a2NRind <- as.character((unique(x$A2NR) + 1) / 2)
+      
       if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
           mvrnorm(
@@ -847,6 +895,19 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
               diag(get(paste0("sigma.r", a1ind, a2Rind)))
           )
       } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
+        cormat.r <- cormat.exch(rho, length(times))
+        for (i in 1:dim(m)[1]) {
+          cormat.nr[m[i, 1], m[i, 2]] <- 
+            generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                              t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                              design = design, rprob = get(paste0("r", a1ind)),
+                              sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                              sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
+                              sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
+                              rho = cormat.nr[m[i, 1], m[i, 2]],
+                              rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
+                              gammas = gammas, lambdas = lambdas)
+        }
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
         mvrnorm(
           dim(x)[1],
@@ -859,7 +920,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
         cormat.nr <- cormat.exch(rho, length(times))
         for (i in 1:dim(m)[1]) {
           cormat.nr[m[i, 1], m[i, 2]] <- 
-            generate.nr.cor(a1 = unique(x$A1), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+            generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = design, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
