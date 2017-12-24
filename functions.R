@@ -553,17 +553,25 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                               "iter" = iter, "condVars" = condVars)
                        }
                      }
+  
+  results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
+                    "niter" = niter, "corstr" = corstr), results)
+  
+  test <- binom.test(x = sum(results$pval <= results$alpha / 2) + sum(results$pval >= 1 - results$alpha / 2),
+                     n = results$valid, p = results$power.target, alternative = "two.sided")
+  
+  results <- c(results, "power" = unname(test$estimate), "p.value" = unname(test$p.value))
+  
   pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), "n = ", n,
-                          "\neffect size = ", delta, "\npower = ", power,
+                          "\neffect size = ", delta, "\ntarget power = ", power,
+                          "\nempirical power = ", results$power, 
+                          " (p = ", round(results$p.value, 3), ")",
                           "\ntrue corr structure = ", 
                           switch(corstr, "id" =, "identity" = "identity", 
                                  "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")))
   if (notify) {
     pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = pbDevice)
   }
-  
-  results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
-                    "niter" = niter, "corstr" = corstr), results)
   
   class(results) <- c("simResult", class(results))
   return(results)
@@ -878,13 +886,11 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     cormat.r00 <- cormat.r0
   }
   
-  
   d <-
     do.call("rbind", lapply(split.SMART(d), function(x) {
       a1ind   <- as.character((unique(x$A1) + 1) / 2)
-      a2Rind  <- ifelse(unique(x$A2R) == 0, "0", as.character((unique(x$A2R) + 1) / 2))
-      a2NRind <- as.character((unique(x$A2NR) + 1) / 2)
-      
+      a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
+      a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
       if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
         x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
           mvrnorm(
@@ -916,28 +922,40 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
             get(paste0("cormat.r", a1ind, a2Rind)) %*%
             diag(get(paste0("sigma.r", a1ind, a2Rind)))
         )
-      } else {
-        cormat.nr <- cormat.exch(rho, length(times))
-        for (i in 1:dim(m)[1]) {
-          cormat.nr[m[i, 1], m[i, 2]] <- 
-            generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = design, rprob = get(paste0("r", a1ind)),
-                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
-                            sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
-                            rho = cormat.nr[m[i, 1], m[i, 2]],
-                            rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
-                            gammas = gammas, lambdas = lambdas)
+      } else if (design == 2) {
+        if (unique(x$R) == 0) {
+          cormat.nr <- cormat.exch(rho, length(times))
+          for (i in 1:dim(m)[1]) {
+            cormat.nr[m[i, 1], m[i, 2]] <- 
+              generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                                t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                                design = design, rprob = get(paste0("r", a1ind)),
+                                sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                                sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
+                                sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
+                                rho = cormat.nr[m[i, 1], m[i, 2]],
+                                rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
+                                gammas = gammas, lambdas = lambdas)
+          }
+          x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+            mvrnorm(
+              dim(x)[1],
+              mu = rep(0, length(times)),
+              Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
+                cormat.nr %*%
+                diag(get(paste0("sigma.nr", a1ind, a2NRind)))
+            )
         }
-        x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-          mvrnorm(
-            dim(x)[1],
-            mu = rep(0, length(times)),
-            Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
-              get(paste0("cormat.", switch(unique(x$R) + 1, "nr", paste0("r", a1ind)))) %*%
-              diag(get(paste0("sigma.nr", a1ind, a2NRind)))
-          )
+        else {
+          x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+            mvrnorm(
+              dim(x)[1],
+              mu = rep(0, length(times)),
+              Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                diag(get(paste0("sigma.r", a1ind, a2Rind)))
+            )
+        }
       }
       x
     }))
