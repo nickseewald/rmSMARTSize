@@ -387,7 +387,7 @@ mod.derivs <- function(times, spltime) {
 }
 
 print.simResult <- function(sim) {
-  test <- binom.test(x = sum(sim$pval <= sim$alpha / 2) + sum(sim$pval >= 1 - sim$alpha / 2),
+  test <- binom.test(x = sum(sim$pval <= sim$alpha / 2, na.rm = T) + sum(sim$pval >= 1 - sim$alpha / 2, na.rm = T),
                      n = sim$valid, p = sim$power.target, alternative = "two.sided")
   cat("\tSimulation Results\n")
   cat(paste("input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
@@ -473,8 +473,14 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
     n <- sample.size(delta, ifelse(is.null(r), min(r0, r1), r), rho, alpha, power, design, round, conservative)
   
   ## Simulate
-  cat(paste0("********************\nStarting simulation!\n", ifelse(is.null(pbIdentifier), NULL, pbIdentifier), "\nn = ", n, "\n",
-             niter, " iterations.\n********************\n"))
+  cat(paste0("********************\n",
+             "Starting simulation!\n",
+             "delta = ", delta, "\n",
+             "corstr = exch(", rho, ")\n",
+             ifelse(is.null(pbIdentifier), NULL, pbIdentifier),
+             "\nn = ", n, "\n",
+             niter, " iterations.\n",
+             "********************\n"))
   results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE) %dorng% { 
                        
@@ -557,7 +563,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
                     "niter" = niter, "corstr" = corstr), results)
   
-  test <- binom.test(x = sum(results$pval <= results$alpha / 2) + sum(results$pval >= 1 - results$alpha / 2),
+  test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
                      n = results$valid, p = results$power.target, alternative = "two.sided")
   
   results <- c(results, "power" = unname(test$estimate), "p.value" = unname(test$p.value))
