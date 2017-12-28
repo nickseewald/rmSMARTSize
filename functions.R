@@ -32,12 +32,14 @@ combine.results <- function(list1, list2) {
   pval       <- c(list1$pval, list2$pval)
   param.hat  <- rbind(list1$param.hat, list2$param.hat)
   sigma2.hat <- rbind(list1$sigma2.hat, list2$sigma2.hat)
-  param.var  <- Reduce("+", list(list1$param.var, list2$param.var))
+  param.var  <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                       list(list1$param.var, list2$param.var))
   rho.hat    <- c(list1$rho.hat, list2$rho.hat)
   coverage   <- list1$coverage + list2$coverage
   iter       <- c(list1$iter, list2$iter)
   valid      <- list1$valid + list2$valid
-  condVars   <- Map("+", list1$condVars, list2$condVars)
+  condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                    list1$condVars, list2$condVars)
   
   return(list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
               "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
@@ -248,11 +250,11 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
 
 # Clean up output of combine.results, to be used in the foreach loop after combining everything
 finalize.results <- function(x) {
-  param.hat     <- apply(as.matrix(x$param.hat), 2, mean)
-  sigma2.hat    <- apply(as.matrix(x$sigma2.hat), 2, mean)
+  param.hat     <- apply(as.matrix(x$param.hat), 2, mean, na.rm = T)
+  sigma2.hat    <- apply(as.matrix(x$sigma2.hat), 2, mean, na.rm = T)
   param.var     <- x$param.var / x$valid
-  param.var.est <- apply(as.matrix(x$param.hat), 2, var)
-  rho.hat       <- mean(x$rho.hat)
+  param.var.est <- apply(as.matrix(x$param.hat), 2, var, na.rm = T)
+  rho.hat       <- mean(x$rho.hat, na.rm = T)
   coverage      <- as.numeric(x$coverage / x$valid)
   condVars      <- lapply(x$condVars, function(v) v / x$valid)
   
@@ -399,6 +401,10 @@ print.simResult <- function(sim) {
             "coverage =", sim$coverage, "\n"))
   cat(paste("marginal estimates:\nvariances =", paste0("(", paste(round(sim$sigma2.hat, 5), collapse = ", "), ")"),
             "correlation =", round(sim$rho.hat, 5), "\n"))
+}
+
+resultTable <- function() {
+  
 }
 
 sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, design = 2, round = "up", conservative = TRUE) {
@@ -561,20 +567,24 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                      }
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
-                    "niter" = niter, "corstr" = corstr), results)
+                    "r0" = r0, "r1" = r1, "niter" = niter, "corstr" = corstr), results)
   
   test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
                      n = results$valid, p = results$power.target, alternative = "two.sided")
   
   results <- c(results, "power" = unname(test$estimate), "p.value" = unname(test$p.value))
   
-  pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), "n = ", n,
-                          "\neffect size = ", delta, "\ntarget power = ", power,
-                          "\nempirical power = ", results$power, 
-                          " (p = ", round(results$p.value, 3), ")",
+  pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), 
                           "\ntrue corr structure = ", 
                           switch(corstr, "id" =, "identity" = "identity", 
-                                 "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")))
+                                 "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")),
+                          "r0 = ", r0, ", r1 = ", r1,
+                          "\neffect size = ", delta,
+                          "\nn = ", n,
+                           "\ntarget power = ", power,
+                          "\nempirical power = ", results$power, 
+                          " (p = ", round(results$p.value, 3), ")"
+                          )
   if (notify) {
     pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = pbDevice)
   }
