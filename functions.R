@@ -248,7 +248,8 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   }
 }
 
-# Clean up output of combine.results, to be used in the foreach loop after combining everything
+# Clean up output of combine.results, to be used in the foreach loop after
+# combining everything
 finalize.results <- function(x) {
   param.hat     <- apply(as.matrix(x$param.hat), 2, mean, na.rm = T)
   sigma2.hat    <- apply(as.matrix(x$sigma2.hat), 2, mean, na.rm = T)
@@ -389,13 +390,12 @@ mod.derivs <- function(times, spltime) {
 }
 
 print.simResult <- function(sim) {
-  test <- binom.test(x = sum(sim$pval <= sim$alpha / 2, na.rm = T) + sum(sim$pval >= 1 - sim$alpha / 2, na.rm = T),
-                     n = sim$valid, p = sim$power.target, alternative = "two.sided")
   cat("\tSimulation Results\n")
   cat(paste("input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
+  cat(paste("effect size =", sim$delta, "r0 =", sim$r0, "r1 =", sim$r1, "\n"))
   cat("power results:\n")
-  fp <- format.pval(test$p.value, digits = max(1L, getOption('digits') - 3L))
-  cat(paste("target power =", sim$power.target, "estimated power =", test$estimate, "p-value",
+  fp <- format.pval(sim$pval.power, digits = max(1L, getOption('digits') - 3L))
+  cat(paste("target power =", sim$power.target, "estimated power =", sim$power, "p-value",
             ifelse(substr(fp, 1L, 1L) == "<", fp, paste("=", fp)), "\n"))
   cat(paste("parameter estimates:\nmodel parameters =", paste0("(", paste(round(sim$param.hat, 5), collapse = ", "), ")"),
             "coverage =", sim$coverage, "\n"))
@@ -403,8 +403,40 @@ print.simResult <- function(sim) {
             "correlation =", round(sim$rho.hat, 5), "\n"))
 }
 
-resultTable <- function() {
+#' Compile sim results into a LaTeX-ready table
+#'
+#' @param results A list of objects of class \code{simResult} to be tabulated
+#'
+#' @return
+#' @export
+#'
+#' @examples
+resultTable <- function(results) {
+  d <- do.call("rbind", lapply(results, function(l) {
+    data.frame("delta" = l$delta,
+               "rprob" = min(l$r0, l$r1),
+               "rho" = l$rho,
+               "sharp" = ifelse(l$sharp, "sharp", "cons."),
+               "n" = l$n,
+               "estPwr" = l$power,
+               "pval.power" = l$pval.power,
+               "coverage" = l$coverage,
+               "pval.coverage" = binom.test(x = l$coverage * l$niter,
+                                            n = l$niter, p = .95, 
+                                            alternative = "two.sided")$p.value,
+               "nTrial" = l$niter,
+               "nValid" = l$valid
+               )
+  }))
   
+  colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}}\\right\\}$", "$\\rho$",
+                   "Formula", "$n$", "$1-\\hat{\\beta}$", "p value", "Coverage",
+                   "p value", "Num. Runs", "Valid Runs")
+  
+  print(xtable(d, digits = c(1,1,1,1,1,0,3,3,3,3,0,0)),
+        sanitize.text.function = identity, booktabs = TRUE,
+        include.rownames = F,
+        include.colnames = T)
 }
 
 sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, design = 2, round = "up", conservative = TRUE) {
@@ -567,12 +599,12 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                      }
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
-                    "r0" = r0, "r1" = r1, "niter" = niter, "corstr" = corstr), results)
+                    "r0" = r0, "r1" = r1, "niter" = niter, "corstr" = corstr, "sharp" = !conservative), results)
   
   test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
                      n = results$valid, p = results$power.target, alternative = "two.sided")
   
-  results <- c(results, "power" = unname(test$estimate), "p.value" = unname(test$p.value))
+  results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
   
   pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), 
                           "\ntrue corr structure = ", 
@@ -583,7 +615,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                           "\nn = ", n,
                            "\ntarget power = ", power,
                           "\nempirical power = ", results$power, 
-                          " (p = ", round(results$p.value, 3), ")"
+                          " (p = ", round(results$pval.power, 3), ")"
                           )
   if (notify) {
     pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = pbDevice)
