@@ -8,7 +8,7 @@ library(slackr)
 #   library("Rmpi")
 # }
 
-slackrSetup(config_file = "~/d3slack.dcf")
+slackrSetup(config_file = "d3slack.dcf")
 source("functions.R", echo = FALSE)
 
 # Set up cluster for parallel computation
@@ -31,7 +31,8 @@ maxiter.solver <- 1000
 tol <- 1e-8
 seed <- 1001
 
-slackr_bot(paste("All systems go so far!\nRunning on", length(clus), "cores."))
+startString <- paste("All systems go so far!\nRunning on", length(clus), "cores.")
+slackr_bot(startString)
 
 ##### All assumptions satisfied #####
 sigma <- 6
@@ -41,6 +42,10 @@ sigma.r0 <- 6.1
 ## Effect size: 0.3
 gammas <- c(33.5, -0.8, 0.9, -0.8, 0.4, -0.4, 0.1)
 lambdas <- c(0.1, -0.5)
+
+save(file = "simsDesign2-delta3-noViol.RData",
+     list = c("sigma", "sigma.r1", "sigma.r0",
+              "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (corr in c(0, .3, .6, .8)) {
   for (resp in c(0.4, 0.6)) {
@@ -63,13 +68,15 @@ for (corr in c(0, .3, .6, .8)) {
   }
 }
 
-pbPost("note", "All done!",
-       paste("All simulations are complete for effect size 0.3, no assumption violations"),
-       recipients = c('pixel', 'spectre'))
+slackr_bot("All simulations are complete for effect size 0.3, no assumption violations")
 
 ## Effect size: 0.5
 gammas <- c(33.5, -0.8, 1.1, -0.8, 0.8, -0.4, 0.1)
 lambdas <- c(0.1, -0.5)
+
+save(file = "simsDesign2-delta5-noViol.RData",
+     list = c("sigma", "sigma.r1", "sigma.r0",
+              "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (corr in c(0, .3, .6, .8)) {
   for (resp in c(0.4, 0.6)) {
@@ -92,8 +99,6 @@ for (corr in c(0, .3, .6, .8)) {
   }
 }
 
-pbPost("note", "All done!",
-       paste("All simulations are complete for effect size 0.5, no assumption violations"),
-       recipients = c('pixel', 'spectre'))
+slackr_bot("All simulations are complete for effect size 0.5, no assumption violations")
 
 stopCluster(clus)
