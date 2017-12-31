@@ -47,7 +47,7 @@ save(file = "simsDesign2-delta3-violS1a-1.RData",
      list = c("sigma", "sigma.r1", "sigma.r0",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
-lapply(list(c(0, 0, 0), c(0.3, 0.31, .32), c(.6, .62, .63), c(.8, .82, .83)), function(corr) {
+lapply(list(c(0, 0, 0), c(0.3, 0.31, .32), c(.6, .62, .63), c(.8, .82, .84)), function(corr) {
   for (resp in c(0.4, 0.6)) {
     for (sharp in c(FALSE, TRUE)) {
       r1 <- r0 <- resp
@@ -63,8 +63,7 @@ lapply(list(c(0, 0, 0), c(0.3, 0.31, .32), c(.6, .62, .63), c(.8, .82, .83)), fu
                                        ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
       save(file = "simsDesign2-delta3-violS1a-1.RData",
            list = c(grep("^d2small.*viol1", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
-                    "gammas", "lambdas", "seed", "times", "spltime"),
-           safe = TRUE, precheck = TRUE)
+                    "gammas", "lambdas", "seed", "times", "spltime"), precheck = TRUE)
     }
   }
 })
@@ -95,11 +94,11 @@ lapply(list(c(0, 0, 0), c(0.3, 0.35, .35), c(.6, .7, .7), c(.8, .94, .94)), func
                                        ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
       save(file = "simsDesign2-delta3-violS1a-2.RData",
            list = c(grep("^d2small.*viol2", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
-                    "gammas", "lambdas", "seed", "times", "spltime"),
-           safe = TRUE, precheck = TRUE)
+                    "gammas", "lambdas", "seed", "times", "spltime"), precheck = TRUE)
     }
   }
 })
 
 slackr_bot("All simulations are complete for effect size 0.3 with the stronger violation of S1(a).")
 
+stopCluster(clus)
