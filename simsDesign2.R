@@ -3,11 +3,12 @@
 library(MASS)
 library(doParallel)
 library(doRNG)
-library(RPushbullet)
+library(slackr)
 # if (!is.loaded("mpi_initialize")) {
 #   library("Rmpi")
 # }
 
+slackrSetup(config_file = "~/d3slack.dcf")
 source("functions.R", echo = FALSE)
 
 # Set up cluster for parallel computation
@@ -30,9 +31,7 @@ maxiter.solver <- 1000
 tol <- 1e-8
 seed <- 1001
 
-pbPost("note", "Starting Simulations",
-       paste("All systems go so far!\nRunning on", length(clus), "cores."),
-       recipients = c('pixel', 'spectre'))
+slackr_bot(paste("All systems go so far!\nRunning on", length(clus), "cores."))
 
 ##### All assumptions satisfied #####
 sigma <- 6
@@ -54,7 +53,7 @@ for (corr in c(0, .3, .6, .8)) {
                  sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
                  constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
                  corstr = "exch", rho = corr, niter = niter, notify = T, pbDevice = c("pixel", "spectre"),
-                 pbIdentifier = paste0("all assumptions ok\n",
+                 postIdentifier = paste0("all assumptions ok\n",
                                        ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
       save(file = "simsDesign2-delta3-noViol.RData",
            list = c(grep("d2small", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
@@ -83,7 +82,7 @@ for (corr in c(0, .3, .6, .8)) {
                  sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
                  constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
                  corstr = "exch", rho = corr, niter = niter, notify = TRUE, pbDevice = c("pixel", "spectre"),
-                 pbIdentifier = paste0("all assumptions ok\n",
+                 postIdentifier = paste0("all assumptions ok\n",
                                        ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
       save(file = "simsDesign2-delta5-noViol.RData",
            list = c(grep("d2med", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
