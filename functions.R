@@ -392,7 +392,7 @@ mod.derivs <- function(times, spltime) {
 print.simResult <- function(sim) {
   cat("\tSimulation Results\n")
   cat(paste("input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
-  cat(paste("effect size =", sim$delta, "r0 =", sim$r0, "r1 =", sim$r1, "\n"))
+  cat(paste("effect size =", sim$delta, "\nr0 =", sim$r0, "r1 =", sim$r1, "rho = ", sim$rho, "\n"))
   cat("power results:\n")
   fp <- format.pval(sim$pval.power, digits = max(1L, getOption('digits') - 3L))
   cat(paste("target power =", sim$power.target, "estimated power =", sim$power, "p-value",
@@ -429,9 +429,9 @@ resultTable <- function(results) {
                )
   }))
   
-  colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}}\\right\\}$", "$\\rho$",
-                   "Formula", "$n$", "$1-\\hat{\\beta}$", "p value", "Coverage",
-                   "p value", "Num. Runs", "Valid Runs")
+  colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}\\right\\}$", "$\\rho$",
+                   "Formula", "$n$", "$1-\\hat{\\beta}$", "$p$ value", "Coverage",
+                   "$p$ value", "Num. Runs", "Valid Runs")
   
   print(xtable(d, digits = c(1,1,1,1,1,0,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,
@@ -467,7 +467,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 L.eos = NULL, L.auc = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                notify = FALSE, pbDevice = NULL, pbIdentifier = NULL) {
+                notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
   
   # n:        number of participants in trial
   # gammas:   Parameters from marginal mean model
@@ -515,7 +515,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
              "Starting simulation!\n",
              "delta = ", delta, "\n",
              "corstr = exch(", rho, ")\n",
-             ifelse(is.null(pbIdentifier), NULL, pbIdentifier),
+             ifelse(is.null(postIdentifier), NULL, postIdentifier),
              "\nn = ", n, "\n",
              niter, " iterations.\n",
              "********************\n"))
@@ -606,22 +606,26 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   
   results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
   
-  pbMessageText <- paste0(ifelse(!is.null(pbIdentifier), paste0(pbIdentifier, "\n"), ""), 
+  postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""), 
                           "\ntrue corr structure = ", 
                           switch(corstr, "id" =, "identity" = "identity", 
                                  "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")),
-                          "r0 = ", r0, ", r1 = ", r1,
+                          "\nr0 = ", r0, ", r1 = ", r1,
                           "\neffect size = ", delta,
                           "\nn = ", n,
                            "\ntarget power = ", power,
                           "\nempirical power = ", results$power, 
                           " (p = ", round(results$pval.power, 3), ")"
                           )
-  if (notify) {
-    pbPost("note", "Simulation Complete!", body = pbMessageText, recipients = pbDevice)
-  }
   
   class(results) <- c("simResult", class(results))
+  
+  if (notify) {
+    try(slackr_bot(postMessageText))
+    try(slackr_bot(print(results)))
+    # pbPost("note", "Simulation Complete!", body = postMessageText, recipients = pbDevice)
+  }
+  
   return(results)
 }
 
