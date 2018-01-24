@@ -1,6 +1,8 @@
 ### Functions for simulations of SMARTs with continuous repeated-measures outcomes
 ### Nick Seewald
 
+library(xtable)
+
 ### Compute conditional mean Y at a particular time for a particular cell,
 ### per the specified model
 conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
@@ -40,10 +42,17 @@ combine.results <- function(list1, list2) {
   valid      <- list1$valid + list2$valid
   condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                     list1$condVars, list2$condVars)
+
+  result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
+                 "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
+                 "condVars" = condVars)
+
+  if ("data" %in% names(list1)) {
+    dataList <- c(list1$data, list2$data)
+    result[["data"]] <- dataList
+  }
   
-  return(list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
-              "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-              "condVars" = condVars))
+  return(result)
 }
 
 ### Construct a t-by-t AR(1) correlation matrix with parameter rho
@@ -180,9 +189,9 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
     weights <- aggregate(weight ~ id, d, unique)
     
     # Weight residual sums
-    r <- weights$weight * r 
+    r <- weights$weight * r
     
-    # Construct numerator for estimator of alpha in exchangeable corstr
+    # Construct numerator for estimator of rho in exchangeable corstr
     numerator <- apply(r, 2, sum)
     
     # Create matrix of weights per person-time per DTR
@@ -223,6 +232,14 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   
   weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
   
+  if (pool.time & pool.dtr) {
+    numerator <- apply(subset(resids, select = grep("dtr", names(resids))), 2, sum)
+    denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gamm)
+    numerator / denominator
+  }
+  
+  sum(subset(resids, select = grep("dtr", names(resids)))) / (sum(subset(weightmat, select = grep("dtr", names(weightmat)))) - length(gammas))
+  
   sigma2.t.dtr <- Reduce(function(...) merge(..., by = "time"), 
                          lapply(1:4, function(dtr) {
                            x <- list(resids[[paste0("dtr", dtr)]])
@@ -231,12 +248,12 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
                            x <- list(weightmat[[paste0("dtr", dtr)]])
                            sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
                                                by = list("time" = resids$time), sum)
-                           sumsqrs[, 2] <- sumsqrs[, 2] / (sumwts[, 2] - length(gammas))
+                           sumsqrs[, 2] <- sumsqrs[, 2] / sumwts[, 2]
                            sumsqrs
                          }))
   
   if (pool.time & pool.dtr) {
-    mean(apply(sigma2.t.dtr[, -1], 2, mean))
+    sum(sigma2.t.dtr) / (length(times) * sum(grepl("dtr", names(sigma2.t.dtr))))
   } else if (pool.time & !pool.dtr) {
     matrix(apply(sigma2.t.dtr[, -1], 2, mean), nrow = 1, 
            dimnames = list(NULL, sapply(1:4, function(dtr) paste0('dtr', dtr))))
@@ -248,6 +265,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   }
 }
 
+
 # Clean up output of combine.results, to be used in the foreach loop after
 # combining everything
 finalize.results <- function(x) {
@@ -258,13 +276,18 @@ finalize.results <- function(x) {
   rho.hat       <- mean(x$rho.hat, na.rm = T)
   coverage      <- as.numeric(x$coverage / x$valid)
   condVars      <- lapply(x$condVars, function(v) v / x$valid)
-  
+
   cat("Finishing...\n")
+
+  result <- list("n" = x$n, "alpha" = x$alpha, "power.target" = x$power.target, "delta" = x$delta,
+                 "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
+                 "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var,
+                 "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars)
   
-  return(list("n" = x$n, "alpha" = x$alpha, "power.target" = x$power.target, "delta" = x$delta,
-              "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
-              "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var, 
-              "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars))
+  if ("data" %in% names(x))
+    result[["data"]] <- x$data
+  
+  return(result)
 }
 
 generate.sd <- function(sigma, a1, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
@@ -421,8 +444,8 @@ resultTable <- function(results) {
                "estPwr" = l$power,
                "pval.power" = l$pval.power,
                "coverage" = l$coverage,
-               "pval.coverage" = binom.test(x = l$coverage * l$niter,
-                                            n = l$niter, p = .95, 
+               "pval.coverage" = binom.test(x = l$coverage * l$valid,
+                                            n = l$valid, p = .95, 
                                             alternative = "two.sided")$p.value,
                "nTrial" = l$niter,
                "nValid" = l$valid
@@ -467,6 +490,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 L.eos = NULL, L.auc = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
+                save.data = FALSE,
                 notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
   
   # n:        number of participants in trial
@@ -520,22 +544,26 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
              niter, " iterations.\n",
              "********************\n"))
   results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
-                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE) %dorng% { 
+                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
                        
                        d <- SMART.generate(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                           rho, rho.r1, rho.r0, perfect = perfect)
+                                           rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL)
                        if (d$valid == FALSE) {
-                         return(list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
-                              "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
-                              "sigma2.hat" = matrix(ncol = (length(times) * (1 - constant.var.time) * constant.var.dtr) +
-                                                      4 * (1 - constant.var.dtr) +
-                                                      (constant.var.time * constant.var.dtr),
-                                                    nrow = (length(times) * (1 - constant.var.dtr) +
-                                                              (4 * (1 - constant.var.dtr) * constant.var.time) +
-                                                              (constant.var.time * constant.var.dtr))),
-                              "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
-                              "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
-                              "alpha" = alpha, "power.target" = power))
+                         result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
+                                        "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
+                                        "sigma2.hat" = matrix(ncol = (length(times) * (1 - constant.var.time) * constant.var.dtr) +
+                                                                4 * (1 - constant.var.dtr) +
+                                                                (constant.var.time * constant.var.dtr),
+                                                              nrow = (length(times) * (1 - constant.var.dtr) +
+                                                                        (4 * (1 - constant.var.dtr) * constant.var.time) +
+                                                                        (constant.var.time * constant.var.dtr))),
+                                        "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
+                                        "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
+                                        "alpha" = alpha, "power.target" = power)
+                         # if (save.data) {
+                         #   result[["data"]] <- list(d$data)
+                         # }
+                         return(result)
                        } else {
                          d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
                                        times = times, direction = "long", v.names = "Y")
@@ -592,9 +620,14 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                          
                          pval <- 1 - pnorm(as.numeric((L.eos %*% param.hat) / sqrt(L.eos %*% param.var %*% L.eos)))
                          
-                         list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
-                              "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
-                              "iter" = iter, "condVars" = condVars)
+                         result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
+                                        "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
+                                        "iter" = iter, "condVars" = condVars)
+                         if (save.data) {
+                           result[["data"]] <- list(d$data)
+                         }
+                         
+                         return(result)
                        }
                      }
   
@@ -603,18 +636,18 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   
   test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
                      n = results$valid, p = results$power.target, alternative = "two.sided")
-  
+
   results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
-  
-  postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""), 
-                          "\ntrue corr structure = ", 
-                          switch(corstr, "id" =, "identity" = "identity", 
+
+  postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""),
+                          "\ntrue corr structure = ",
+                          switch(corstr, "id" =, "identity" = "identity",
                                  "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")),
                           "\nr0 = ", r0, ", r1 = ", r1,
                           "\neffect size = ", delta,
                           "\nn = ", n,
                            "\ntarget power = ", power,
-                          "\nempirical power = ", results$power, 
+                          "\nempirical power = ", results$power,
                           " (p = ", round(results$pval.power, 3), ")"
                           )
   
@@ -938,80 +971,82 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     cormat.r00 <- cormat.r0
   }
   
-  d <-
-    do.call("rbind", lapply(split.SMART(d), function(x) {
-      a1ind   <- as.character((unique(x$A1) + 1) / 2)
-      a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
-      a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
-      if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
-        x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-          mvrnorm(
-            dim(x)[1],
-            mu = rep(0, length(times)),
-            Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-              get(paste0("cormat.r", a1ind, a2Rind)) %*%
-              diag(get(paste0("sigma.r", a1ind, a2Rind)))
-          )
-      } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
-        cormat.r <- cormat.exch(rho, length(times))
-        for (i in 1:dim(m)[1]) {
-          cormat.nr[m[i, 1], m[i, 2]] <- 
-            generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                              t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                              design = design, rprob = get(paste0("r", a1ind)),
-                              sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                              sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
-                              sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
-                              rho = cormat.nr[m[i, 1], m[i, 2]],
-                              rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
-                              gammas = gammas, lambdas = lambdas)
-        }
-        x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-        mvrnorm(
-          dim(x)[1],
-          mu = rep(0, length(times)),
-          Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-            get(paste0("cormat.r", a1ind, a2Rind)) %*%
-            diag(get(paste0("sigma.r", a1ind, a2Rind)))
-        )
-      } else if (design == 2) {
-        if (unique(x$R) == 0) {
-          cormat.nr <- cormat.exch(rho, length(times))
-          for (i in 1:dim(m)[1]) {
-            cormat.nr[m[i, 1], m[i, 2]] <- 
-              generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                                t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                                design = design, rprob = get(paste0("r", a1ind)),
-                                sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                                sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
-                                sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
-                                rho = cormat.nr[m[i, 1], m[i, 2]],
-                                rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
-                                gammas = gammas, lambdas = lambdas)
-          }
-          x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-            mvrnorm(
-              dim(x)[1],
-              mu = rep(0, length(times)),
-              Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
-                cormat.nr %*%
-                diag(get(paste0("sigma.nr", a1ind, a2NRind)))
-            )
-        }
-        else {
-          x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-            mvrnorm(
-              dim(x)[1],
-              mu = rep(0, length(times)),
-              Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                diag(get(paste0("sigma.r", a1ind, a2Rind)))
-            )
-        }
-      }
-      x
-    }))
-
+  d <- do.call("rbind",
+               lapply(split.SMART(d), function(x) {
+                 a1ind   <- as.character((unique(x$A1) + 1) / 2)
+                 a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
+                 a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
+                 if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
+                   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                     mvrnorm(
+                       dim(x)[1],
+                       mu = rep(0, length(times)),
+                       Sigma =
+                         diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                         get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                         diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                     )
+                 } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
+                   cormat.r <- cormat.exch(rho, length(times))
+                   for (i in 1:dim(m)[1]) {
+                     cormat.nr[m[i, 1], m[i, 2]] <- 
+                       generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                                         t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                                         design = design, rprob = get(paste0("r", a1ind)),
+                                         sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                                         sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
+                                         sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
+                                         rho = cormat.nr[m[i, 1], m[i, 2]],
+                                         rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
+                                         gammas = gammas, lambdas = lambdas)
+                   }
+                   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                     mvrnorm(
+                       dim(x)[1],
+                       mu = rep(0, length(times)),
+                       Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                         get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                         diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                     )
+                 } else if (design == 2) {
+                   if (unique(x$R) == 0) {
+                     cormat.nr <- cormat.exch(rho, length(times))
+                     for (i in 1:dim(m)[1]) {
+                       cormat.nr[m[i, 1], m[i, 2]] <- 
+                         generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                                           t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                                           design = design, rprob = get(paste0("r", a1ind)),
+                                           sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                                           sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
+                                           sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
+                                           rho = cormat.nr[m[i, 1], m[i, 2]],
+                                           rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
+                                           gammas = gammas, lambdas = lambdas)
+                     }
+                     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                       mvrnorm(
+                         dim(x)[1],
+                         mu = rep(0, length(times)),
+                         Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
+                           cormat.nr %*%
+                           diag(get(paste0("sigma.nr", a1ind, a2NRind)))
+                       )
+                   }
+                   else {
+                     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                       mvrnorm(
+                         dim(x)[1],
+                         mu = rep(0, length(times)),
+                         Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                           get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                           diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                       )
+                   }
+                 }
+                 x
+               })
+  )
+  
   d <- d[order(d$id), ]
   rownames(d) <- 1:n
   return(list("data" = d, "valid" = T))
