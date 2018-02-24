@@ -395,7 +395,7 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
       t(dmat[[dtr]]) %*% solve(V) %*% as.matrix(obs[[paste0("dtr", dtr)]], ncol = 1)
     }))
     m %*% t(m)
-  })) / length(unique(d$id))
+  })) / n
 }
 
 mod.derivs <- function(times, spltime) {
@@ -444,9 +444,10 @@ resultTable <- function(results) {
                "estPwr" = l$power,
                "pval.power" = l$pval.power,
                "coverage" = l$coverage,
-               "pval.coverage" = binom.test(x = l$coverage * l$valid,
+               "pval.coverage" = tryCatch(binom.test(x = l$coverage * l$valid,
                                             n = l$valid, p = .95, 
                                             alternative = "two.sided")$p.value,
+                                          error = function(e) NULL),
                "nTrial" = l$niter,
                "nValid" = l$valid
                )
@@ -462,22 +463,34 @@ resultTable <- function(results) {
         include.colnames = T)
 }
 
-sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, design = 2, round = "up", conservative = TRUE) {
+sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, aim = c("eos", "auc"),
+                        design = 2, round = "up", conservative = TRUE) {
   # Input checks
   if (!(round %in% c("up", "down"))) stop("round must be either up or down")
+  aim <- match.arg(aim)
+  nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
   if (design == 2) {
-    if (conservative) {
-      ceiling(2 * (qnorm(1 - alpha / 2) + qnorm(power))^2 * 2 * (2 - r) * (1 - rho^2) / delta^2)
-    } else {
-      nid <- (2 * (qnorm(1 - alpha / 2) + qnorm(power))^2 * 2 * (2 - r)) / delta^2
-      correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
-      if (round == "up") {
-        ceiling(nid * correction)
-      } else if (round == "down") {
-        floor(nid * correction)
+    if (aim == "eos"){
+      designEffect <- 2 - r
+      if (conservative) {
+        correction <- 1 - rho^2
+      } else {
+        correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
       }
+    } else if (aim == "auc") {
+      designEffect <- 2 - (r / 4)
+      if (!conservative)
+        warning("conservative argument ignored for AUC sample size")
+      correction <- (1 - rho^2) / (2.5 + 2 * rho)
     }
-  } else stop("Not a valid design indicator.")
+  }
+  else stop("Not a valid design indicator.")
+  
+  if (round == "up") {
+    ceiling(nid * designEffect * correction)
+  } else if (round == "down") {
+    floor(nid * designEffect * correction)
+  }
 }
 
 sim <- function(n = NULL, gammas, lambdas, times, spltime,
@@ -485,12 +498,12 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 r = NULL, r1 = r, r0 = r,
                 uneqsdDTR = NULL, uneqsd = NULL, 
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
-                corstr = "identity",
+                corstr = c("identity", "exchangeable", "ar1"),
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
-                L.eos = NULL, L.auc = NULL,
+                L = NULL, 
                 constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                save.data = FALSE,
+                save.data = FALSE, empirical = FALSE,
                 notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
   
   # n:        number of participants in trial
@@ -525,7 +538,8 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
     stop("uneqsdDTR must be either NULL or a list.")
   
   ## Handle correlation structure
-  if (corstr %in% c("id", "identity")) rho <- rho.r1 <- rho.r0 <- 0
+  corstr <- match.arg(corstr)
+  if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
   
   ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
   if (design == 1) constant.var.dtr <- FALSE
@@ -539,6 +553,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
              "Starting simulation!\n",
              "delta = ", delta, "\n",
              "corstr = exch(", rho, ")\n",
+             "r0 = ", r0, ", r1 = ", r1,
              ifelse(is.null(postIdentifier), NULL, postIdentifier),
              "\nn = ", n, "\n",
              niter, " iterations.\n",
@@ -613,12 +628,12 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                            param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
                          }
                          
-                         confLB <- L.eos %*% param.hat - sqrt(L.eos %*% param.var %*% L.eos) * qnorm(.975)
-                         confUB <- L.eos %*% param.hat + sqrt(L.eos %*% param.var %*% L.eos) * qnorm(.975)
+                         confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)
+                         confUB <- L %*% param.hat + sqrt(L %*% param.var %*% L) * qnorm(.975)
                          
-                         coverage <- ifelse(confLB <= L.eos %*% gammas & L.eos %*% gammas <= confUB, 1, 0)
+                         coverage <- ifelse(confLB <= L %*% gammas & L %*% gammas <= confUB, 1, 0)
                          
-                         pval <- 1 - pnorm(as.numeric((L.eos %*% param.hat) / sqrt(L.eos %*% param.var %*% L.eos)))
+                         pval <- 1 - pnorm(as.numeric((L %*% param.hat) / sqrt(L %*% param.var %*% L)))
                          
                          result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
                                         "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
@@ -632,7 +647,8 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                      }
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
-                    "r0" = r0, "r1" = r1, "niter" = niter, "corstr" = corstr, "sharp" = !conservative), results)
+                    "corstr" = corstr, "rho" = rho, "rho.r0" = rho.r0, "rho.r1" = rho.r1,
+                    "r0" = r0, "r1" = r1, "niter" = niter, "sharp" = !conservative), results)
   
   test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
                      n = results$valid, p = results$power.target, alternative = "two.sided")
@@ -662,10 +678,90 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   return(results)
 }
 
+
+### Wrapper for all the estimation functions
+#' Estimation for repeated-measures SMART data
+#'
+#' @param data A `data.frame` with the appropriate structure (see `SMART.generate`)
+#' @param corstr A string indicating the type of working correlation structure. One of `"identity"`/`"id"`, `"exchangeable"`/`"exch"`. 
+#' @param times A vector of times at which the repeated-measures outcome has been collected
+#' @param spltime The time point (in `times`) immediately after which response/non-response is assessed and participants are re-randomized
+#' @param design An integer, one of `1`, `2`, or `3`, indicating the design type of the SMART
+#' @param start A vector of the same length as the regression parameter vector indicating the start point for the solver
+#' @param maxiter.solver The maximum number of iterations the solver is allowed to perform until convergence. Defaults to `1000`
+#' @param tol The tolerance required to achieve covergence. Defaults to `10e-8`
+#' @param pool.time Logical. Should estimates of the variance be pooled over time?
+#' @param pool.dtr Logical. Should estimates of the variance be pooled over DTR?
+#'
+#' @return
+#' @export
+#'
+#' @examples
+SMART.estimate <- function(data, corstr, times, spltime, design,
+                           start, maxiter.solver = 1000, tol = 10e-8,
+                           pool.time = FALSE, pool.dtr = FALSE) {
+  if (corstr %in% c("id", "identity"))
+    corstr <- "id"
+  else if (corstr %in% c("exch", "exchangeable")) 
+    corstr <- "exch"
+  
+  d1 <- reshape(data, varying = list(grep("Y", names(data))), ids = data$id, 
+                times = times, direction = "long", v.names = "Y")
+  d1 <- d1[order(d1$id, d1$time), ]
+  
+  param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime,
+                               design, start, maxiter.solver, tol)
+  
+  sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
+                                pool.time = constant.var.time, pool.dtr = constant.var.dtr)
+  if (corstr != "id") 
+    rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
+  
+  # Compute variance matrices for all conditional cells
+  condVars <- lapply(split.SMART(d$data), function(x) {
+    var(subset(x, select = grep("Y", names(x), value = TRUE)))
+  })
+  
+  # Iterate parameter estimation
+  if (corstr %in% c("id", "identity") | (corstr == "exch" & rho == 0)) {
+    outcome.var <- varmat(sigma2.hat, 0, times, "exch")
+    param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
+    iter <- 1
+  } else if (corstr == "exch" & rho != 0) {
+    outcome.var <- varmat(sigma2.hat, rho.hat, times, "exch")
+    param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
+    # Iterate until estimates of gammas and rho converge
+    for (i in 1:maxiter.solver) {
+      sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
+                                    pool.time = constant.var.time, pool.dtr = constant.var.dtr)
+      rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
+      outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exch")
+      param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
+      if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
+          (rho.new - rho.hat)^2 <= tol) {
+        param.hat <- param.new
+        sigma2.hat <- sigma2.new
+        rho.hat <- rho.new
+        iter <- i
+        break
+      } else {
+        param.hat <- param.new
+        sigma2.hat <- sigma2.new
+        rho.hat <- rho.new
+        iter <- i
+      }
+    }
+    param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
+  }
+  
+  
+}
+
+
 ## Function to generate SMART data
 SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                            sigma, sigma.r1, sigma.r0, corstr = "identity", uneqsdDTR = NULL, uneqsd = NULL,
-                           rho = NULL, rho.r1 = rho, rho.r0 = rho, perfect = FALSE) {
+                           rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
   
   # n:        number of participants in trial
   # gammas:   Parameters from marginal mean model
@@ -984,7 +1080,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                        Sigma =
                          diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
                          get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                         diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                         diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                       empirical = empirical
                      )
                  } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
                    cormat.r <- cormat.exch(rho, length(times))
@@ -1006,7 +1103,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                        mu = rep(0, length(times)),
                        Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
                          get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                         diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                         diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                       empirical = empirical
                      )
                  } else if (design == 2) {
                    if (unique(x$R) == 0) {
@@ -1029,7 +1127,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                          mu = rep(0, length(times)),
                          Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
                            cormat.nr %*%
-                           diag(get(paste0("sigma.nr", a1ind, a2NRind)))
+                           diag(get(paste0("sigma.nr", a1ind, a2NRind))),
+                         empirical = empirical
                        )
                    }
                    else {
@@ -1039,7 +1138,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                          mu = rep(0, length(times)),
                          Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
                            get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                           diag(get(paste0("sigma.r", a1ind, a2Rind)))
+                           diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                         empirical = empirical
                        )
                    }
                  }
