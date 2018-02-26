@@ -149,7 +149,7 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
 }
 
-estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exch") {
+estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exchangeable") {
   n <- length(unique(d$id))
   mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime)
@@ -171,7 +171,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
   resids <- cbind("id" = d$id, "time" = d$time,
                   resids * d[, grep("dtr", names(d))])
   
-  if (corstr == "exch") {
+  if (corstr == "exchangeable") {
     # For every id and every dtr, compute (\sum_{s<t} r_{s} * r_{t} / sigma_{s} sigma_t()
     r <- do.call(rbind,
                  lapply(split.data.frame(resids, resids$id),
@@ -495,6 +495,7 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, aim = c("eos", 
 
 sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
+                aim = c("eos", "auc"),
                 r = NULL, r1 = r, r0 = r,
                 uneqsdDTR = NULL, uneqsd = NULL, 
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
@@ -524,6 +525,8 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   # rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to generate data 
   #            (assumed constant across DTRs)
   
+  aim <- match.arg(aim)
+  
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) stop("You must provide either r or both r1 and r0.")
   ## TODO: Finish input handling
@@ -546,7 +549,8 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
-    n <- sample.size(delta, ifelse(is.null(r), min(r0, r1), r), rho, alpha, power, design, round, conservative)
+    n <- sample.size(delta, ifelse(is.null(r), min(r0, r1), r), rho, alpha, power,
+                     aim, design, round, conservative)
   
   ## Simulate
   cat(paste0("********************\n",
@@ -597,19 +601,19 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                          })
                          
                          # Iterate parameter estimation
-                         if (corstr %in% c("id", "identity") | (corstr == "exch" & rho == 0)) {
-                           outcome.var <- varmat(sigma2.hat, 0, times, "exch")
+                         if (corstr == "identity" | (corstr == "exchangeable" & rho == 0)) {
+                           outcome.var <- varmat(sigma2.hat, 0, times, "exchangeable")
                            param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
                            iter <- 1
-                         } else if (corstr == "exch" & rho != 0) {
-                           outcome.var <- varmat(sigma2.hat, rho.hat, times, "exch")
+                         } else if (corstr == "exchangeable" & rho != 0) {
+                           outcome.var <- varmat(sigma2.hat, rho.hat, times, "exchangeable")
                            param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
                            # Iterate until estimates of gammas and rho converge
                            for (i in 1:maxiter.solver) {
                              sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                            pool.time = constant.var.time, pool.dtr = constant.var.dtr)
                              rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exch")
+                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exchangeable")
                              param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
                              if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
                                  (rho.new - rho.hat)^2 <= tol) {
@@ -1185,7 +1189,8 @@ validTrial <- function(d, design) {
 
 ### Construct V matrix 
 # NB: ONLY WORKS WHEN POOLING OVER DTRs RIGHT NOW!!
-varmat <- function(sigma2, alpha, times, corstr) {
+varmat <- function(sigma2, alpha, times, corstr = c("identity", "exchangeable", "ar1")) {
+  corstr <- match.arg(corstr)
   if (length(sigma2) != 1 & length(sigma2) != length(times)) {
     stop("sigma must be either length 1 (assuming constant variance over time) or have the same length as times.")
   } else if (length(sigma2) == 1) {
@@ -1194,7 +1199,7 @@ varmat <- function(sigma2, alpha, times, corstr) {
   
   sigma2 <- as.vector(sigma2)
   
-  if (corstr == "exch") {
+  if (corstr == "exchangeable") {
     diag(sqrt(sigma2)) %*% cormat.exch(alpha, length(times)) %*% diag(sqrt(sigma2))
   }
 }
