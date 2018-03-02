@@ -339,9 +339,11 @@ generate.cond.sd <- function(a1, r, a2R, a2NR, t, spltime, design, rprob,
   if (t <= spltime) {
     sigma
   } else {
-    sqrt((1 / (r * rprob + (1 - r) * (1 - rprob))) * (sigma^2 - ((1 - r) * rprob + r * (1 - rprob)) * sigma.cond^2 - 
-                                                       rprob * (1 - rprob) * (rmean - nrmean)^2)
-    )
+    sqrt((1 / (r * rprob + (1 - r) * (1 - rprob))) *
+           (
+             sigma^2 - ((1 - r) * rprob + r * (1 - rprob)) * sigma.cond ^ 2 -
+               rprob * (1 - rprob) * (rmean - nrmean)^2
+           ))
   }
 }
 
@@ -478,10 +480,10 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, aim = c("eos", 
         correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
       }
     } else if (aim == "auc") {
-      designEffect <- 2 - (r / 4)
+      designEffect <- 1
       if (!conservative)
         warning("conservative argument ignored for AUC sample size")
-      correction <- (1 - rho^2) / (2.5 + 2 * rho)
+      correction <- (1 - rho) * (6 + 16 * rho + 9 * rho^2 - r * (1 + 2 * rho)) / ((1 + rho) * (1 + 2 * rho))
     }
   }
   else stop("Not a valid design indicator.")
@@ -701,13 +703,11 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
 #' @export
 #'
 #' @examples
-SMART.estimate <- function(data, corstr, times, spltime, design,
+SMART.estimate <- function(data, corstr = c("identity", "exchangeable", "ar1"),
+                           times, spltime, design,
                            start, maxiter.solver = 1000, tol = 10e-8,
                            pool.time = FALSE, pool.dtr = FALSE) {
-  if (corstr %in% c("id", "identity"))
-    corstr <- "id"
-  else if (corstr %in% c("exch", "exchangeable")) 
-    corstr <- "exch"
+  corstr <- match.arg(corstr)
   
   d1 <- reshape(data, varying = list(grep("Y", names(data))), ids = data$id, 
                 times = times, direction = "long", v.names = "Y")
@@ -727,11 +727,11 @@ SMART.estimate <- function(data, corstr, times, spltime, design,
   })
   
   # Iterate parameter estimation
-  if (corstr %in% c("id", "identity") | (corstr == "exch" & rho == 0)) {
+  if (corstr == "identity" | (corstr == "exchangeable" & rho == 0)) {
     outcome.var <- varmat(sigma2.hat, 0, times, "exch")
     param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
     iter <- 1
-  } else if (corstr == "exch" & rho != 0) {
+  } else if (corstr == "exchangeable" & rho != 0) {
     outcome.var <- varmat(sigma2.hat, rho.hat, times, "exch")
     param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
     # Iterate until estimates of gammas and rho converge
@@ -763,8 +763,9 @@ SMART.estimate <- function(data, corstr, times, spltime, design,
 
 
 ## Function to generate SMART data
-SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
-                           sigma, sigma.r1, sigma.r0, corstr = "identity", uneqsdDTR = NULL, uneqsd = NULL,
+SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, balanceRand = FALSE,
+                           sigma, sigma.r1, sigma.r0, corstr = c("identity", "exchangeable", "ar1"),
+                           uneqsdDTR = NULL, uneqsd = NULL,
                            rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
   
   # n:        number of participants in trial
@@ -792,11 +793,10 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   if (sum(times > spltime) == 0) stop("Currently spltime must be less than max(times)")
   
   ## Handle correlation structure
-  if (corstr %in% c("id", "identity")) {
+  corstr <- match.arg(corstr)
+  if (corstr == "identity") {
     rho <- rho.r1 <- rho.r0 <- 0
-    corstr <- "id"
   }
-  if (corstr %in% c("exch", "exchangeable")) corstr <- "exch"
   
   ## Make sure design input is valid
   if (!(design %in% 1:3)) stop("Invalid design choice. Must be one of 1-3.")
@@ -825,19 +825,43 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   
   ## Generate treatment allocations and response
   d <- data.frame("id"   = 1:n,
-                  "A1"   = 2 * rbinom(n, 1, .5) - 1,
+                  "A1"   = 0,
                   "R"    = NA,
                   "A2R"  = 0,
                   "A2NR" = 0)
   
+  if (balanceRand) {
+    s <- sample(1:n, size = floor(n/2), replace = FALSE)
+    d$A1[s]  <- 1
+    d$A1[-s] <- -1
+  } else {
+    d$A1 <- 2 * rbinom(n, 1, 0.5) - 1
+  }
   d$R[d$A1 ==  1] <- rbinom(sum(d$A1 == 1), 1, r1)
   d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
   
   if (design == 1) {
-    d$A2R[d$A1 == 1  & d$R == 1] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 1), 1, .5) - 1
-    d$A2R[d$A1 == -1 & d$R == 1] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 1), 1, .5) - 1
-    d$A2NR[d$A1 == 1  & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
-    d$A2NR[d$A1 == -1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
+    if (balanceRand) {
+      A1Rcombos <- expand.grid("A1" = c(1, -1), "R" = c(0, 1))
+      for (i in 1:nrow(A1Rcombos)) {
+        s <- sample(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]),
+                    floor(sum(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]) / 2),
+                    replace = FALSE)
+        if (A1Rcombos$R[i] == 1) {
+          d$A2R[s] <- 1
+          d$A2R[setdiff(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]), s)] <- -1
+        } else {
+          d$A2NR[s] <- 1
+          d$A2NR[setdiff(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]), s)] <- -1
+        }
+      }
+    } else {
+      d$A2R[d$A1 == 1  & d$R == 1] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 1), 1, .5) - 1
+      d$A2R[d$A1 == -1 & d$R == 1] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 1), 1, .5) - 1
+      d$A2NR[d$A1 == 1  & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
+      d$A2NR[d$A1 == -1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
+    }
+    
     d$weight <- 4
     
     d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
@@ -870,6 +894,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   if (!validTrial(d, design)) {
     return(list("data" = d, "valid" = F))
   }
+  
+  class(d) <- c("SMART", class(d))
     
   ## Generate Y's at their (conditional) means
   d <- do.call("rbind", lapply(split.SMART(d), function(z) {
@@ -1004,9 +1030,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   
   # Construct "base" correlation matrices for responders 
   # (these are the marginal correlation matrices and will be modified below)
-  if (corstr == "id") {
+  if (corstr == "identity") {
     cormat.r1 <- cormat.r0 <- diag(rep(1, length(times)))
-  } else if (corstr == "exch") {
+  } else if (corstr == "exchangeable") {
     cormat.r1 <- cormat.r0 <- cormat.exch(rho, length(times))
   } else if (corstr == "ar1") {
     cormat.r1 <- cormat.r0 <- cormat.ar1(rho, length(times))
@@ -1030,42 +1056,53 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     cormat.r01 <- cormat.r0
     
     for (a1ind in c(0, 1)) {
-      if (corstr %in% c("exch", "id")) {
-        x <- cormat.exch(rho, length(times))
+      if (corstr %in% c("exchangeable", "identity")) {
+        x1 <- x2 <- x3 <- cormat.exch(rho, length(times))
       } else if (corstr == "ar1") {
-        x <- cormat.ar1(rho, length(times))
+        x1 <- x2 <- x3 <- cormat.ar1(rho, length(times))
       }
-      for(i in 1:dim(m)[1]) {
-        x[m[i, 1], m[i, 2]] <- 
+      for(i in 1:nrow(m)) {
+        x1[m[i, 1], m[i, 2]] <- 
           generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1,
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 1, rprob = r1,
+                            design = 1, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = sigma.r11[m[i, 1]],
-                            sigma.t2.ref = sigma.r11[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 1))[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 1))[m[i, 2]],
                             rho = rho,
-                            rho.ref = cormat.r11[m[i, 1], m[i, 2]],
+                            rho.ref = get(paste0("cormat.r", a1ind, 1))[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "1"), x)
+      assign(paste0("cormat.nr", a1ind, "1"), x1)
+      
+      for(i in 1:nrow(m)) {
+        x2[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1))[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1))[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.nr", a1ind, 1))[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.r", a1ind, "0"), x2)
+      
+      for(i in 1:nrow(m)) {
+        x3[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = 0,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, "0"), x1)
     }
-    
-    cormat.nr11 <- cormat.exch(rho, length(times))
-    for (i in 1:dim(m)[1]) {
-      cormat.nr11[m[i, 1], m[i, 2]] <- 
-        generate.cond.cor(a1 = 1, r = 0, a2R = 1, a2NR = 1,
-                          t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                          design = 1, rprob = r1,
-                          sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                          sigma.t1.ref = sigma.r11[m[i, 1]],
-                          sigma.t2.ref = sigma.r11[m[i, 2]],
-                          rho = rho,
-                          rho.ref = cormat.r11[m[i, 1], m[i, 2]],
-                          gammas = gammas, lambdas = lambdas)
-    }
-    
-    # FIXME: Finish this!
-    
   } else if (design == 2) {
     cormat.r10 <- cormat.r1
     cormat.r00 <- cormat.r0
