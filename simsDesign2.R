@@ -28,7 +28,7 @@ registerDoParallel(clus)
 times <- c(0, 1, 2)
 spltime <- 1
 
-niter <- 5
+niter <- 5000
 maxiter.solver <- 1000
 tol <- 1e-8
 seed <- 1001
@@ -45,13 +45,13 @@ sigma.r0 <- 6
 simGrid <- expand.grid(list(
   sharp = c(FALSE, TRUE),
   resp = c(.2, .4, .6, .8),
-  corr = list(rep(0,   3),
-              rep(0.3, 3),
-              rep(0.6, 3),
-              rep(0.8, 3))
+  corr = list(rep(0, 3),
+              c(0.3, 0.3 * sigma / sigma.r1, 0.3 * sigma / sigma.r0),
+              c(0.6, 0.6 * sigma / sigma.r1, 0.6 * sigma / sigma.r0),
+              c(0.8, 0.8 * sigma / sigma.r1, 0.8 * sigma / sigma.r0))
 ))
 
-##### Effect size: 0.3 #####
+#### Effect size: 0.3 #####
 gammas <- c(33.5, -0.8, 0.9, -0.8, 0.4, -0.4, 0.1)
 lambdas <- c(0.1, -0.5)
 
@@ -64,15 +64,15 @@ for (i in 1:nrow(simGrid)) {
   resp <- r1 <- r0 <- simGrid$resp[i]
   sharp <- simGrid$sharp[i]
   corr <- simGrid$corr[[i]]
-  
+
   # When corr is zero, sharp and conservative sample sizes are identical
   # Skip the one that we label "sharp" to avoid doing the same sim twice
   if (sum(corr == 0) == length(times) & sharp)
     next
-  
+
   # Set the seed for every unique simulation
   set.seed(seed)
-  
+
   # Simulate
   assign(paste0("d2small.r", resp * 10, ".exch", corr[1] * 10, ifelse(sharp, ".sharp", "")),
          sim(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0, times = times, spltime = spltime,
@@ -83,7 +83,7 @@ for (i in 1:nrow(simGrid)) {
              niter = niter, notify = notify, pbDevice = c("pixel", "spectre"),
              postIdentifier = paste0("all assumptions ok\n",
                                      ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
-  
+
   # Save the result
   save(file = "simsDesign2-delta3-noViol.RData",
        list = c(grep("d2small", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
@@ -112,7 +112,7 @@ for (i in 1:nrow(simGrid)) {
              sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
              constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
              corstr = "exch", rho = corr[1], rho.r1 = corr[2], rho.r0 = corr[3],
-             niter = niter, otify = notify, pbDevice = c("pixel", "spectre"),
+             niter = niter, notify = notify, pbDevice = c("pixel", "spectre"),
              postIdentifier = paste0("all assumptions ok\n",
                                      ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
   save(file = "simsDesign2-delta5-noViol.RData",
@@ -135,7 +135,7 @@ for (i in 1:nrow(simGrid)) {
   # Extract simulation conditions from simGrid
   resp <- r1 <- r0 <- simGrid$resp[i]
   sharp <- simGrid$sharp[i]
-  corr <- simGrid$corr
+  corr <- simGrid$corr[[i]]
   set.seed(seed)
   assign(paste0("d2large.r", resp * 10, ".exch", corr * 10, ifelse(sharp, ".sharp", "")),
          sim(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0, times = times, spltime = spltime,
@@ -143,7 +143,7 @@ for (i in 1:nrow(simGrid)) {
              sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
              constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
              corstr = "exch", rho = corr[1], rho.r1 = corr[2], rho.r0 = corr[3], 
-             niter = niter, notify = TRUE, pbDevice = c("pixel", "spectre"),
+             niter = niter, notify = notify, pbDevice = c("pixel", "spectre"),
              postIdentifier = paste0("all assumptions ok\n",
                                      ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
   save(file = "simsDesign2-delta8-noViol.RData",
