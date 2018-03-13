@@ -465,26 +465,24 @@ resultTable <- function(results) {
         include.colnames = T)
 }
 
-sample.size <- function(delta, r, rho, alpha = 0.05, power = .8, aim = c("eos", "auc"),
+sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
                         design = 2, round = "up", conservative = TRUE) {
   # Input checks
   if (!(round %in% c("up", "down"))) stop("round must be either up or down")
-  aim <- match.arg(aim)
   nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
-  if (design == 2) {
-    if (aim == "eos"){
-      designEffect <- 2 - r
-      if (conservative) {
-        correction <- 1 - rho^2
-      } else {
-        correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
-      }
-    } else if (aim == "auc") {
-      designEffect <- 1
-      if (!conservative)
-        warning("conservative argument ignored for AUC sample size")
-      correction <- (1 - rho) * (6 + 16 * rho + 9 * rho^2 - r * (1 + 2 * rho)) / ((1 + rho) * (1 + 2 * rho))
+  correction <- 1 - rho^2
+  if (design == 1) {
+    designEffect <- 2
+    if (!conservative) {
+      correction <- (1 - rho)^2 - (1 - rho) * rho^2 / (2 * (1 + rho))
     }
+  } else if (design == 2) {
+    designEffect <- 2 - r
+    if (!conservative) {
+      correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
+    }
+  } else if (design == 3) {
+    designEffect <- (3 - r) / 2
   }
   else stop("Not a valid design indicator.")
   
@@ -551,8 +549,10 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
-    n <- sample.size(delta, ifelse(is.null(r), min(r0, r1), r), rho, alpha, power,
-                     aim, design, round, conservative)
+    n <- sample.size(delta = delta, r = ifelse(is.null(r), min(r0, r1), r),
+                     rho = rho, alpha = alpha, power = power,
+                     design = design, round = round,
+                     conservative = conservative)
   
   ## Simulate
   cat(paste0("********************\n",
@@ -1091,7 +1091,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
       
       for(i in 1:nrow(m)) {
         x3[m[i, 1], m[i, 2]] <- 
-          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = 0,
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1,
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = 1, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
@@ -1101,11 +1101,38 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "0"), x1)
+      assign(paste0("cormat.nr", a1ind, "0"), x3)
     }
   } else if (design == 2) {
     cormat.r10 <- cormat.r1
     cormat.r00 <- cormat.r0
+    
+    NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
+    
+    for (j in 1:nrow(NRgrid)) {
+      a1ind <- NRgrid$a1ind[j]
+      a2NRind <- NRgrid$a2NRind[j]
+      
+      if (corstr %in% c("exchangeable", "identity")) {
+        x <- cormat.exch(rho, length(times))
+      } else if (corstr == "ar1") {
+        x <- cormat.ar1(rho, length(times))
+      }
+      
+      for (i in 1:nrow(m)) {
+        x[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 0, a2NR = 2 * a2NRind - 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 2, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = parent.frame(n = 2))
+    }
   }
   
   d <- do.call("rbind",
@@ -1113,77 +1140,89 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                  a1ind   <- as.character((unique(x$A1) + 1) / 2)
                  a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
                  a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
-                 if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
-                   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                     mvrnorm(
-                       dim(x)[1],
-                       mu = rep(0, length(times)),
-                       Sigma =
-                         diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                         get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                         diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                       empirical = empirical
-                     )
-                 } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
-                   cormat.r <- cormat.exch(rho, length(times))
-                   for (i in 1:dim(m)[1]) {
-                     cormat.nr[m[i, 1], m[i, 2]] <- 
-                       generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                                         t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                                         design = design, rprob = get(paste0("r", a1ind)),
-                                         sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                                         sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
-                                         sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
-                                         rho = cormat.nr[m[i, 1], m[i, 2]],
-                                         rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
-                                         gammas = gammas, lambdas = lambdas)
-                   }
-                   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                     mvrnorm(
-                       dim(x)[1],
-                       mu = rep(0, length(times)),
-                       Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                         get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                         diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                       empirical = empirical
-                     )
-                 } else if (design == 2) {
-                   if (unique(x$R) == 0) {
-                     cormat.nr <- cormat.exch(rho, length(times))
-                     for (i in 1:dim(m)[1]) {
-                       cormat.nr[m[i, 1], m[i, 2]] <- 
-                         generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                                           t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                                           design = design, rprob = get(paste0("r", a1ind)),
-                                           sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                                           sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
-                                           sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
-                                           rho = cormat.nr[m[i, 1], m[i, 2]],
-                                           rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
-                                           gammas = gammas, lambdas = lambdas)
-                     }
-                     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                       mvrnorm(
-                         dim(x)[1],
-                         mu = rep(0, length(times)),
-                         Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
-                           cormat.nr %*%
-                           diag(get(paste0("sigma.nr", a1ind, a2NRind))),
-                         empirical = empirical
-                       )
-                   }
-                   else {
-                     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                       mvrnorm(
-                         dim(x)[1],
-                         mu = rep(0, length(times)),
-                         Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                           get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                           diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                         empirical = empirical
-                       )
-                   }
-                 }
+                 xcor <- get(paste0("cormat.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
+                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)))
+                 xvar <- get(paste0("sigma.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
+                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)))
+                 
+                 x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                   mvrnorm(
+                     n = nrow(x),
+                     mu = rep(0, length(times)),
+                     Sigma = diag(xvar) %*% xcor %*% diag(xvar),
+                     empirical = empirical
+                   )
+                 # if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
+                 # x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                 #   mvrnorm(
+                 #     dim(x)[1],
+                 #     mu = rep(0, length(times)),
+                 #     Sigma =
+                 #       diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                 #       get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                 #       diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                 #     empirical = empirical
+                 #   )
+                 # } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
+                 #   cormat.r <- cormat.exch(rho, length(times))
+                 #   for (i in 1:dim(m)[1]) {
+                 #     cormat.nr[m[i, 1], m[i, 2]] <- 
+                 #       generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                 #                         t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                 #                         design = design, rprob = get(paste0("r", a1ind)),
+                 #                         sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                 #                         sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
+                 #                         sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
+                 #                         rho = cormat.nr[m[i, 1], m[i, 2]],
+                 #                         rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
+                 #                         gammas = gammas, lambdas = lambdas)
+                 #   }
+                 #   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                 #     mvrnorm(
+                 #       dim(x)[1],
+                 #       mu = rep(0, length(times)),
+                 #       Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                 #         get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                 #         diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                 #       empirical = empirical
+                 #     )
+                 # } else if (design == 2) {
+                 #   if (unique(x$R) == 0) {
+                 #     cormat.nr <- cormat.exch(rho, length(times))
+                 #     for (i in 1:dim(m)[1]) {
+                 #       cormat.nr[m[i, 1], m[i, 2]] <- 
+                 #         generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
+                 #                           t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                 #                           design = design, rprob = get(paste0("r", a1ind)),
+                 #                           sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                 #                           sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
+                 #                           sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
+                 #                           rho = cormat.nr[m[i, 1], m[i, 2]],
+                 #                           rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
+                 #                           gammas = gammas, lambdas = lambdas)
+                 #     }
+                 #     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                 #       mvrnorm(
+                 #         dim(x)[1],
+                 #         mu = rep(0, length(times)),
+                 #         Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
+                 #           cormat.nr %*%
+                 #           diag(get(paste0("sigma.nr", a1ind, a2NRind))),
+                 #         empirical = empirical
+                 #       )
+                 #   }
+                 #   else {
+                 #     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
+                 #       mvrnorm(
+                 #         dim(x)[1],
+                 #         mu = rep(0, length(times)),
+                 #         Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
+                 #           get(paste0("cormat.r", a1ind, a2Rind)) %*%
+                 #           diag(get(paste0("sigma.r", a1ind, a2Rind))),
+                 #         empirical = empirical
+                 #       )
+                 #   }
+                 # }
                  x
                })
   )
