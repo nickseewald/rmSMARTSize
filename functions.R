@@ -537,7 +537,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 L = NULL, 
                 constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                save.data = FALSE, empirical = FALSE,
+                save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
                 notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
   
   # n:        number of participants in trial
@@ -576,7 +576,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
   
   ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
-  if (design == 1) constant.var.dtr <- FALSE
+  # if (design == 1) constant.var.dtr <- FALSE
   
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
@@ -599,7 +599,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
                        
                        d <- SMART.generate(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                           rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL)
+                                           rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, balanceRand = balanceRand, empirical = empirical)
                        if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
                                         "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
@@ -942,6 +942,10 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
   d <- d[order(d$id), ]
   rownames(d) <- d$id
   
+  # Create an environment to store variance information as assigned during
+  # loops, etc.
+  varEnv <- new.env()
+  
   ## Compute conditional standard deviations for non-responders
   if (design == 1) {
     dtrs <- do.call("rbind", dtrIndex(design))
@@ -960,9 +964,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
         })
       })
     }
-    sigma.r11 <- sigma.r1
-    sigma.r01 <- sigma.r0
-    # rm("sigma.r1", "sigma.r0")
+    assign("sigma.r11", sigma.r1, envir = varEnv)
+    assign("sigma.r01", sigma.r0, envir = varEnv)
     
     #Loop over indices for first-stage treatment and compute conditional standard deviations
     invisible(sapply(c(0, 1), function(a1ind) {
@@ -977,8 +980,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                         sum(dtr == c(2 * a1ind -1, 1, 1)) == 3))]][i],
                                                       sigma[i]),
                                                sigma[i]),
-                                sigma.cond = get(paste0("sigma.r", a1ind, "1"))[i], gammas, lambdas)
-               }), envir = parent.frame(n = 1))
+                                sigma.cond = get(paste0("sigma.r", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
+               }), envir = varEnv)
       assign(paste0("sigma.r", a1ind, "0"),
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
@@ -989,8 +992,8 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                         sum(dtr == c(2 * a1ind -1, -1, 1)) == 3))]][i],
                                                       sigma[i]),
                                                sigma[i]),
-                                sigma.cond = get(paste0("sigma.nr", a1ind, "1"))[i], gammas, lambdas)
-             }), envir = parent.frame(n = 1))
+                                sigma.cond = get(paste0("sigma.nr", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
+             }), envir = varEnv)
       assign(paste0("sigma.nr", a1ind, "0"),
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
@@ -1001,15 +1004,14 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                         sum(dtr == c(2 * a1ind -1, -1, -1)) == 3))]][i],
                                                       sigma[i]),
                                                sigma[i]),
-                                sigma.cond = get(paste0("sigma.r", a1ind, "0"))[i], gammas, lambdas)
-             }), envir = parent.frame(n = 1))
+                                sigma.cond = get(paste0("sigma.r", a1ind, "0"), envir = varEnv)[i], gammas, lambdas)
+             }), envir = varEnv)
     }))
-    rm(sigma.r1, sigma.r0)
   } else if (design == 2) { ## Generate conditional standard deviations in Design 2
     if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
       stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
-    sigma.r10 <- sigma.r1
-    sigma.r00 <- sigma.r0
+    assign("sigma.r10", sigma.r1, envir = varEnv)
+    assign("sigma.r00", sigma.r0, envir = varEnv)
     # rm("sigma.r1", "sigma.r0")
     invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
       if (!is.null(uneqsdDTR)) {
@@ -1044,7 +1046,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                 sigma = sigmaStar[i],
                                 sigma.cond = get(paste0("sigma.r", (x[1] + 1) / 2))[i],
                                 gammas = gammas, lambdas = lambdas)
-             })), envir = parent.frame(n = 2))
+             })), envir = varEnv)
     }))
   } else {
     
@@ -1098,13 +1100,13 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = 1, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 1))[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 1))[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 2]],
                             rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 1))[m[i, 1], m[i, 2]],
+                            rho.ref = get(paste0("cormat.r", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "1"), x1, envir = parent.frame(n = 1))
+      assign(paste0("cormat.nr", a1ind, "1"), x1, envir = varEnv)
       
       for(i in 1:nrow(m)) {
         x2[m[i, 1], m[i, 2]] <- 
@@ -1112,13 +1114,13 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = 1, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1))[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1))[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 2]],
                             rho = rho,
-                            rho.ref = get(paste0("cormat.nr", a1ind, 1))[m[i, 1], m[i, 2]],
+                            rho.ref = get(paste0("cormat.nr", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.r", a1ind, "0"), x2, envir = parent.frame(n = 1))
+      assign(paste0("cormat.r", a1ind, "0"), x2, envir = varEnv)
       
       for(i in 1:nrow(m)) {
         x3[m[i, 1], m[i, 2]] <- 
@@ -1126,17 +1128,17 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = 1, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
                             rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
+                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "0"), x3, envir = parent.frame(n = 1))
+      assign(paste0("cormat.nr", a1ind, "0"), x3, envir = varEnv)
     }
   } else if (design == 2) {
-    cormat.r10 <- cormat.r1
-    cormat.r00 <- cormat.r0
+    assign("cormat.r10", cormat.r1, envir = varEnv)
+    assign("cormat.r00", cormat.r0, envir = varEnv)
     
     NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
     
@@ -1159,10 +1161,10 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
                             rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
+                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = parent.frame(n = 2))
+      assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = varEnv)
     }
   }
   
@@ -1172,9 +1174,9 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                  a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
                  a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
                  xcor <- get(paste0("cormat.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
-                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)))
+                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)), envir = varEnv)
                  xvar <- get(paste0("sigma.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
-                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)))
+                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)), envir = varEnv)
                  
                  x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
                    mvrnorm(
