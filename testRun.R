@@ -1,0 +1,63 @@
+###   Design II Simulations   ###
+### All assumptions satisifed ###
+
+library(MASS)
+library(doParallel)
+library(doRNG)
+library(RPushbullet)
+# if (!is.loaded("mpi_initialize")) {
+#   library("Rmpi")
+# }
+
+source("functions.R", echo = FALSE)
+
+# Set up cluster for parallel computation
+clus <- makeCluster(3)
+# clusterEvalQ(clus, source("longitudinal-simulations-auxfunctions.R"))
+clusterEvalQ(clus, {
+  source("functions.R")
+  library(MASS)
+  library(RPushbullet)
+})
+registerDoParallel(clus)
+
+##### Simulation Setup #####
+
+times <- c(0, 1, 2)
+spltime <- 1
+
+niter <- 5000
+maxiter.solver <- 1000
+tol <- 1e-8
+seed <- 100
+
+
+sigma <- 6
+sigma.r1 <- 6.1
+sigma.r0 <- 6.1
+
+gammas <- c(33.5, -0.8, 1.1, -0.8, 0.8, -0.4, 0.1)
+lambdas <- c(0.1, -0.5)
+
+for (corr in c(.6)) {
+  for (resp in c(0.6)) {
+    for (sharp in c(FALSE, TRUE)) {
+      r1 <- r0 <- resp
+      set.seed(seed)
+      assign(paste0("d2med.r", resp * 10, ".exch", corr * 10, ifelse(sharp, ".sharp", "")),
+             sim(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0, times = times, spltime = spltime,
+                 alpha = .05, power = .8, delta = 0.5, design = 2, conservative = !sharp,
+                 sigma = sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
+                 constant.var.time = FALSE, L.eos = c(0, 0, 2, 0, 2, 2, 0),
+                 corstr = "exch", rho = corr, niter = niter, notify = TRUE, pbDevice = c("pixel", "spectre"),
+                 pbIdentifier = paste0("all assumptions ok\n",
+                                       ifelse(sharp, "sharp n", "conservative n"))), envir = .GlobalEnv)
+      save(file = "simsDesign2-delta5-noViol-test.RData", 
+           list = c(grep("d2med", ls(), value = T), "sigma", "sigma.r1", "sigma.r0",
+                    "gammas", "lambdas", "seed", "times", "spltime"))
+    }
+  }
+}
+
+
+save.image("testRun.RData")

@@ -92,32 +92,34 @@ esteqn.compute <- function(d, V, times, spltime, design, gammas) {
   
   n <- length(unique(d$id))
   
+  nDTR <- switch(design, 8, 4, 3)
+  
   if (!is.list(V) | (is.list(V) & length(V) == 1)) {
-    V <- lapply(1:4, function(i) V)
-  } else if (length(V) != 4)
-    stop("V must be a single matrix or a list of 4 matrices.")
+    V <- lapply(1:nDTR, function(i) V)
+  } else if (length(V) != nDTR)
+    stop(paste("V must be a single matrix or a list of", nDTR, "matrices."))
   
   mvec <- meanvec(times, spltime, design, gammas)
-  deriv <- mod.derivs(times, spltime)
+  deriv <- mod.derivs(times, spltime, design)
   
-  resids <- matrix(rep(d$Y, 4), ncol = 4) -
+  resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
     matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE)
   resids <- cbind("id" = d$id, resids * d[, grep("dtr", names(d))] *
-                    matrix(rep(d$weight, 4), ncol = 4))
+                    matrix(rep(d$weight, nDTR), ncol = nDTR))
   
-  DVinv <- lapply(1:4, function(i) t(deriv[[i]]) %*% solve(V[[i]]))
+  DVinv <- lapply(1:nDTR, function(i) t(deriv[[i]]) %*% solve(V[[i]]))
   
   Reduce("+", lapply(split.data.frame(resids, resids$id), function(x) {
-    Reduce("+", lapply(1:4, function(dtr) {
+    Reduce("+", lapply(1:nDTR, function(dtr) {
       DVinv[[dtr]] %*% matrix(x[[paste0("dtr", dtr)]], ncol = 1)
     }))
   })
   ) / n
 }
 
-esteqn.jacobian <- function(d, V, times, spltime) {
+esteqn.jacobian <- function(d, V, times, spltime, design) {
   
-  deriv <- mod.derivs(times, spltime)
+  deriv <- mod.derivs(times, spltime, design)
   
   Reduce("+", lapply(split.data.frame(d, d$id), function(x) {
     Reduce("+", lapply(1:4, function(dtr) {
@@ -131,7 +133,7 @@ estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver,
   params.hat <- start
   j <- 0
   epsilon <- 10
-  J <- esteqn.jacobian(d, V, times, spltime)
+  J <- esteqn.jacobian(d, V, times, spltime, design)
   
   for (j in 1:maxiter.solver) {
     params.hat.new <- params.hat - solve(J) %*%
@@ -145,14 +147,14 @@ estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver,
 
 estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   n <- length(unique(d$id))
-  J <- esteqn.jacobian(d, V, times, spltime)
+  J <- esteqn.jacobian(d, V, times, spltime, design)
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
 }
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exchangeable") {
   n <- length(unique(d$id))
   mvec <- meanvec(times, spltime, design, gammas)
-  Dmat <- mod.derivs(times, spltime)
+  Dmat <- mod.derivs(times, spltime, design)
   
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
   if (length(sigma) != length(times) & length(sigma) != 1)
@@ -220,7 +222,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   
   n <- length(unique(d$id))
   mvec <- meanvec(times, spltime, design, gammas)
-  Dmat <- mod.derivs(times, spltime)
+  Dmat <- mod.derivs(times, spltime, design)
   
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format")
   
@@ -380,7 +382,7 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
   
   n <- length(unique(d$id))
   mvec <- meanvec(times, spltime, design, gammas)
-  dmat <- mod.derivs(times, spltime)
+  dmat <- mod.derivs(times, spltime, design)
   
   resids <- matrix(rep(d$Y, 4), ncol = 4) -
     matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE)
@@ -400,18 +402,50 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
   })) / n
 }
 
-mod.derivs <- function(times, spltime) {
-  lapply(1:4, function(dtr) {
-    a1 <- switch(dtr, 1, 1, -1, -1)
-    a2 <- switch(dtr, 1, -1, 1, -1)
-    do.call(rbind, lapply(times, function(t) {
-      matrix(c(1, (t <= spltime) * matrix(c(t, t * a1, 0, 0, 0, 0), nrow = 1) + 
-                 (t > spltime) * matrix(c(spltime, spltime * a1, (t - spltime),
-                                          (t - spltime) * a1, (t - spltime) * a2,
-                                          (t - spltime) * a1 * a2), nrow = 1)),
-             nrow = 1)
+mod.derivs <- function(times, spltime, design) {
+  nDTR <- switch(design, 8, 4, 3)
+  A <- dtrIndex(design)
+  
+  dmat <- lapply(1:nDTR, function(dtr) {
+    do.call(rbind, lapply(times, function(ti) {
+      matrix(c(
+        1,
+        (ti <= spltime) * matrix(c(ti, ti * A$a1[dtr], rep(0, 6)), nrow = 1) +
+          (ti > spltime) * matrix(
+            c(
+              spltime,
+              spltime * A$a1[dtr],
+              (ti - spltime),
+              (ti - spltime) * A$a1[dtr],
+              (ti - spltime) * A$a2R[dtr],
+              (ti - spltime) * A$a2NR[dtr],
+              (ti - spltime) * A$a1[dtr] * A$a2R[dtr],
+              (ti - spltime) * A$a1[dtr] * A$a2NR[dtr]
+            ),
+            nrow = 1
+          )
+      ),
+      nrow = 1)
     }))
   })
+  
+  # Since we constructed dmat using the model for design 1, and the models for
+  # designs 2 and 3 are nested inside the design 1 model (see paper supplement),
+  # we can remove the columns of dmat that are all zeros, as these correspond to
+  # parameters that aren't in the nested model.
+  
+  # Find columns where all entries are zero for all DTRs
+  removeCols <- vector("integer")
+  if (design == 2)
+    removeCols <- c(6, 8)
+  else if (design == 3)
+    removeCols <- c(6, 8, 9)
+  
+  # Remove those columns (if necessary)
+  if (length(removeCols) != 0) {
+    lapply(dmat, function(x) x[, -removeCols])
+  } else
+    dmat
 }
 
 print.simResult <- function(sim) {
@@ -495,7 +529,6 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
 
 sim <- function(n = NULL, gammas, lambdas, times, spltime,
                 alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
-                aim = c("eos", "auc"),
                 r = NULL, r1 = r, r0 = r,
                 uneqsdDTR = NULL, uneqsd = NULL, 
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
@@ -524,8 +557,6 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
   #           Form of V to use in estimating equations.
   # rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to generate data 
   #            (assumed constant across DTRs)
-  
-  aim <- match.arg(aim)
   
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) stop("You must provide either r or both r1 and r0.")
@@ -559,7 +590,7 @@ sim <- function(n = NULL, gammas, lambdas, times, spltime,
              "Starting simulation!\n",
              "delta = ", delta, "\n",
              "corstr = exch(", rho, ")\n",
-             "r0 = ", r0, ", r1 = ", r1,
+             "r0 = ", r0, ", r1 = ", r1, "\n",
              ifelse(is.null(postIdentifier), NULL, postIdentifier),
              "\nn = ", n, "\n",
              niter, " iterations.\n",
@@ -947,7 +978,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                       sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.r", a1ind, "1"))[i], gammas, lambdas)
-               }), envir = .GlobalEnv)
+               }), envir = parent.frame(n = 1))
       assign(paste0("sigma.r", a1ind, "0"),
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
@@ -959,7 +990,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                       sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.nr", a1ind, "1"))[i], gammas, lambdas)
-             }), envir = .GlobalEnv)
+             }), envir = parent.frame(n = 1))
       assign(paste0("sigma.nr", a1ind, "0"),
              sapply(1:length(times), function(i) {
                generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
@@ -971,7 +1002,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                                                       sigma[i]),
                                                sigma[i]),
                                 sigma.cond = get(paste0("sigma.r", a1ind, "0"))[i], gammas, lambdas)
-             }), envir = .GlobalEnv)
+             }), envir = parent.frame(n = 1))
     }))
     rm(sigma.r1, sigma.r0)
   } else if (design == 2) { ## Generate conditional standard deviations in Design 2
@@ -1073,7 +1104,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             rho.ref = get(paste0("cormat.r", a1ind, 1))[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "1"), x1)
+      assign(paste0("cormat.nr", a1ind, "1"), x1, envir = parent.frame(n = 1))
       
       for(i in 1:nrow(m)) {
         x2[m[i, 1], m[i, 2]] <- 
@@ -1087,7 +1118,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             rho.ref = get(paste0("cormat.nr", a1ind, 1))[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.r", a1ind, "0"), x2)
+      assign(paste0("cormat.r", a1ind, "0"), x2, envir = parent.frame(n = 1))
       
       for(i in 1:nrow(m)) {
         x3[m[i, 1], m[i, 2]] <- 
@@ -1101,7 +1132,7 @@ SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, b
                             rho.ref = get(paste0("cormat.r", a1ind, 0))[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
-      assign(paste0("cormat.nr", a1ind, "0"), x3)
+      assign(paste0("cormat.nr", a1ind, "0"), x3, envir = parent.frame(n = 1))
     }
   } else if (design == 2) {
     cormat.r10 <- cormat.r1
