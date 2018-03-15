@@ -119,10 +119,11 @@ esteqn.compute <- function(d, V, times, spltime, design, gammas) {
 
 esteqn.jacobian <- function(d, V, times, spltime, design) {
   
+  nDTR <- switch(design, 8, 4, 3)
   deriv <- mod.derivs(times, spltime, design)
   
   Reduce("+", lapply(split.data.frame(d, d$id), function(x) {
-    Reduce("+", lapply(1:4, function(dtr) {
+    Reduce("+", lapply(1:nDTR, function(dtr) {
       unique(x[[paste0("dtr", dtr)]]) * unique(x$weight) *
         t(deriv[[dtr]]) %*% solve(V) %*% deriv[[dtr]]
     }))
@@ -153,6 +154,7 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exchangeable") {
   n <- length(unique(d$id))
+  nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime, design)
   
@@ -165,7 +167,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
     sigma <- rep(sigma, length(times))
   
   # Compute residuals (Y_{it} - mu_{t}(a1, a2))
-  resids <- matrix(rep(d$Y, 4), ncol = 4) -
+  resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
     matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE)
   
   # Create data.frame from resids, indexed by time and ID
@@ -221,29 +223,30 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
 estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, pool.dtr = F) {
   
   n <- length(unique(d$id))
+  nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime, design)
   
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format")
   
-  resids <- (matrix(rep(d$Y, 4), ncol = 4) -
+  resids <- (matrix(rep(d$Y, nDTR), ncol = nDTR) -
                matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE))^2
   resids <- cbind("id" = d$id, "time" = d$time,
                   resids * d[, grep("dtr", names(d))] *
-                    matrix(rep(d$weight, 4), ncol = 4))
+                    matrix(rep(d$weight, nDTR), ncol = nDTR))
   
   weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
   
   if (pool.time & pool.dtr) {
     numerator <- apply(subset(resids, select = grep("dtr", names(resids))), 2, sum)
-    denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gamm)
+    denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gammas)
     numerator / denominator
   }
   
   sum(subset(resids, select = grep("dtr", names(resids)))) / (sum(subset(weightmat, select = grep("dtr", names(weightmat)))) - length(gammas))
   
   sigma2.t.dtr <- Reduce(function(...) merge(..., by = "time"), 
-                         lapply(1:4, function(dtr) {
+                         lapply(1:nDTR, function(dtr) {
                            x <- list(resids[[paste0("dtr", dtr)]])
                            sumsqrs <- aggregate(x = setNames(x, paste0("dtr", dtr)),
                                                 by = list("time" = resids$time), sum)
@@ -258,7 +261,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
     sum(sigma2.t.dtr) / (length(times) * sum(grepl("dtr", names(sigma2.t.dtr))))
   } else if (pool.time & !pool.dtr) {
     matrix(apply(sigma2.t.dtr[, -1], 2, mean), nrow = 1, 
-           dimnames = list(NULL, sapply(1:4, function(dtr) paste0('dtr', dtr))))
+           dimnames = list(NULL, sapply(1:nDTR, function(dtr) paste0('dtr', dtr))))
   } else if (!pool.time & pool.dtr) {
     matrix(apply(sigma2.t.dtr[, -1], 1, mean), nrow = 1,
            dimnames = list(NULL, times))
@@ -381,13 +384,14 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
   # d should be LONG
   
   n <- length(unique(d$id))
+  nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
   dmat <- mod.derivs(times, spltime, design)
   
-  resids <- matrix(rep(d$Y, 4), ncol = 4) -
+  resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
     matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE)
   resids <- cbind("id" = d$id, resids * d[, grep("dtr", names(d))] *
-                    matrix(rep(d$weight, 4), ncol = 4))
+                    matrix(rep(d$weight, nDTR), ncol = nDTR))
   
   # sum over IDs
   Reduce("+", lapply(split.data.frame(resids, resids$id), function(obs) {
@@ -395,7 +399,7 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
     # resid <- obs$weight * obs[, grepl("dtr", names(obs))] * 
     # (obs$Y - meanvec(times, spltime, design, gammas))
     # Sum over DTRs
-    m <- Reduce("+", lapply(1:4, function(dtr) {
+    m <- Reduce("+", lapply(1:nDTR, function(dtr) {
       t(dmat[[dtr]]) %*% solve(V) %*% as.matrix(obs[[paste0("dtr", dtr)]], ncol = 1)
     }))
     m %*% t(m)
