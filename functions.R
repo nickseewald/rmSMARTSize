@@ -78,6 +78,7 @@ conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gamma
 conditionalVarmat <- function(times, spltime, design, r1, r0,
                               corstr = c("identity", "exchangeable", "ar1"),
                               sigma, sigma.r1, sigma.r0,
+                              uneqsd = NULL, uneqsdDTR = NULL,
                               rho, rho.r1, rho.r0,
                               gammas, lambdas) {
   

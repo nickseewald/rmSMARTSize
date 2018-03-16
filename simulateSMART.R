@@ -67,7 +67,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
                 corstr = c("identity", "exchangeable", "ar1"),
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
-                L = NULL, 
+                L = NULL, varmats = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                 save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
@@ -100,6 +100,14 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      design = design, round = round,
                      conservative = conservative)
   
+  # Compute conditional variances
+  varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
+                               corstr = corstr,
+                               sigma, sigma.r1, sigma.r0,
+                               uneqsd = NULL, uneqsdDTR = NULL,
+                               rho, rho.r1, rho.r0,
+                               gammas, lambdas)
+  
   ## Simulate
   cat(paste0("********************\n",
              "Starting simulation!\n",
@@ -114,8 +122,9 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
                        
                        d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                           rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, balanceRand = balanceRand, empirical = empirical)
-                       if (d$valid == FALSE) {
+                                          rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
+                                          balanceRand = balanceRand, empirical = empirical)
+                        if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
                                         "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
                                         "sigma2.hat" = matrix(ncol = (length(times) * (1 - constant.var.time) * constant.var.dtr) +

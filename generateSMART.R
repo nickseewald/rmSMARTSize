@@ -146,18 +146,20 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
   if (is.null(varmats)) {
     varmats <- conditionalVarmat(times, spltime, design, r1, r0,
                                  corstr, sigma, sigma.r1, sigma.r0,
-                                 rho, rho.r1, rho.r0, 
+                                 uneqsd = uneqsd, uneqsdDTR = uneqsdDTR,
+                                 rho, rho.r1, rho.r0,
                                  gammas, lambdas)
   }
   
   d <- do.call("rbind",
                lapply(split.SMART(d), function(x) {
+                 varIndex <- as.character(paste(unique(x$A1), unique(x$R), 
+                                   unique(x$A2R), unique(x$A2NR)))
                  x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
                    mvrnorm(
                      n = nrow(x),
                      mu = rep(0, length(times)),
-                     Sigma = varmats[[paste(unique(x$A1), unique(x$R), 
-                                            unique(x$A2R), unique(x$A2NR))]],
+                     Sigma = varmats[[varIndex]],
                      empirical = empirical
                    )
                  x
