@@ -60,7 +60,7 @@
 #' @export
 #'
 #' @examples
-simulate.SMART <- function(n = NULL, gammas, lambdas, times, spltime,
+simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
                 r = NULL, r1 = r, r0 = r,
                 uneqsdDTR = NULL, uneqsd = NULL, 
