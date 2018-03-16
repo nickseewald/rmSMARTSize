@@ -3,6 +3,52 @@
 
 library(xtable)
 
+### Custom combine function for the foreach %dopar% loop in sim()
+combine.results <- function(list1, list2) {
+  pval       <- c(list1$pval, list2$pval)
+  param.hat  <- rbind(list1$param.hat, list2$param.hat)
+  sigma2.hat <- rbind(list1$sigma2.hat, list2$sigma2.hat)
+  param.var  <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                       list(list1$param.var, list2$param.var))
+  rho.hat    <- c(list1$rho.hat, list2$rho.hat)
+  coverage   <- list1$coverage + list2$coverage
+  iter       <- c(list1$iter, list2$iter)
+  valid      <- list1$valid + list2$valid
+  condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                    list1$condVars, list2$condVars)
+
+  result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
+                 "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
+                 "condVars" = condVars)
+
+  if ("data" %in% names(list1)) {
+    dataList <- c(list1$data, list2$data)
+    result[["data"]] <- dataList
+  }
+  
+  return(result)
+}
+
+conditionalIndex <- function(design) {
+  dtrs <- dtrIndex(design)
+  grid <- expand.grid("a1" = c(1, -1), "r" = c(0, 1),
+                      "a2R" = c(1, 0, -1), "a2NR" = c(1, 0, -1))
+  if (design == 1) {
+    index <- subset(grid, (r == 1 & (a2R != 0 & a2NR == 0)) |
+                      (r == 0 & (a2NR != 0 & a2R == 0)) )
+  } else if (design == 2) {
+    index <- subset(grid, (r == 1 & (a2R == 0 & a2NR == 0)) |
+                      (r == 0 & (a2NR != 0 & a2R == 0)))
+  } else if (design == 3) {
+    index <- subset(grid, (a1 == -1 & a2R == 0 & a2NR == 0) |
+                      (r == 1 & a1 == 1 & a2R == 0 & a2NR == 0) |
+                      (r == 0 & a1 == 1 & a2NR != 0 & a2R == 0))
+  }
+  index <- index[order(index$a1, index$r, decreasing = T), ]
+  rownames(index) <- 1:nrow(index)
+  index
+}
+
 ### Compute conditional mean Y at a particular time for a particular cell,
 ### per the specified model
 conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
@@ -28,31 +74,257 @@ conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gamma
   }
   mu
 }
-
-### Custom combine function for the foreach %dopar% loop in sim()
-combine.results <- function(list1, list2) {
-  pval       <- c(list1$pval, list2$pval)
-  param.hat  <- rbind(list1$param.hat, list2$param.hat)
-  sigma2.hat <- rbind(list1$sigma2.hat, list2$sigma2.hat)
-  param.var  <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
-                       list(list1$param.var, list2$param.var))
-  rho.hat    <- c(list1$rho.hat, list2$rho.hat)
-  coverage   <- list1$coverage + list2$coverage
-  iter       <- c(list1$iter, list2$iter)
-  valid      <- list1$valid + list2$valid
-  condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
-                    list1$condVars, list2$condVars)
-
-  result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
-                 "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-                 "condVars" = condVars)
-
-  if ("data" %in% names(list1)) {
-    dataList <- c(list1$data, list2$data)
-    result[["data"]] <- dataList
+ 
+conditionalVarmat <- function(times, spltime, design, r1, r0,
+                              corstr = c("identity", "exchangeable", "ar1"),
+                              sigma, sigma.r1, sigma.r0,
+                              rho, rho.r1, rho.r0,
+                              gammas, lambdas) {
+  
+  if (length(sigma) == 1) {
+    sigma <- rep(sigma, length(times))
+  } else if (length(sigma) != length(times)) {
+    stop("sigma must either be length-1 or the same length as times.")
+  }
+  ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
+  ## (i.e., more than one measurement after re-randomization)
+  if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
+    sigma.r1 <- rep(sigma.r1, sum(times > spltime))
+  }
+  if (length(sigma.r0) == 1 & sum(times > spltime) > 1) {
+    sigma.r0 <- rep(sigma.r0, sum(times > spltime))
+  }
+  if (length(sigma.r1) != length(times)) {
+    sigma.r1 <- c(sigma[times <= spltime], sigma.r1)
+  }
+  if (length(sigma.r0) != length(times)) {
+    sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
   }
   
-  return(result)
+  varEnv <- new.env()
+  corstr <- match.arg(corstr)
+  A <- conditionalIndex(design)
+  
+  # Construct a matrix of (X,Y) coordinates which need to be adjusted in the conditional cor matrices
+  # i.e., identify which cells of the conditional cor matrix correspond to correlations between the 
+  # second stage and times before the second randomization.
+  # The rows of m are the coordinates (row, column)
+  m <- expand.grid(which(times > spltime), which(times <= spltime))
+  m <- rbind(as.matrix(m), as.matrix(m[, 2:1]))
+  m <- rbind(m, expand.grid(which(times > spltime), which(times > spltime)))
+  m <- subset(m, Var1 != Var2)
+  
+  # Construct "base" correlation matrices for responders 
+  # (these are the marginal correlation matrices and will be modified below)
+  if (corstr == "identity") {
+    cormat.r1 <- cormat.r0 <- diag(rep(1, length(times)))
+  } else if (corstr == "exchangeable") {
+    cormat.r1 <- cormat.r0 <- cormat.exch(rho, length(times))
+  } else if (corstr == "ar1") {
+    cormat.r1 <- cormat.r0 <- cormat.ar1(rho, length(times))
+  }
+  # Create responders' correlation matrices by looping over m and computing appropriate entries
+  for (i in 1:dim(m)[1]) {
+    cormat.r1[m[i, 1], m[i, 2]] <- rho.r1
+    cormat.r0[m[i, 1], m[i, 2]] <- rho.r0
+  }
+  
+  if (design == 1) {
+    dtrs <- do.call("rbind", dtrIndex(design))
+    if (!is.null(uneqsdDTR)) {
+      # Determine which DTRs are the unequal variance ones
+      uneqsdDTRindex <- sapply(1:2, function(i) 
+        which((dtrs[1, ] == uneqsdDTR[[i]][1]) + 
+                (dtrs[2, ] == uneqsdDTR[[i]][2]) +
+                (dtrs[3, ] == uneqsdDTR[[i]][3]) == 3)
+      )
+      # Compute the standard deviation for times after spltime in the DTR with unequal variance
+      uneqsd <- lapply(uneqsdDTR, function(dtr) {
+        sapply(times, function(t) {
+          generate.sd(sigma[which(times == t)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], t = t, spltime = spltime, 
+                      design, rprob = get(paste0("r", (dtr[1] + 1) / 2)), gammas, lambdas)
+        })
+      })
+    }
+    assign("sigma.r11", sigma.r1, envir = varEnv)
+    assign("sigma.r01", sigma.r0, envir = varEnv)
+    
+    #Loop over indices for first-stage treatment and compute conditional standard deviations
+    invisible(sapply(c(0, 1), function(a1ind) {
+      # Use DTR (a1ind, 1, 1) to 
+      assign(paste0("sigma.nr", a1ind, "1"),
+             sapply(1:length(times), function(i) {
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1, t = times[i], spltime = spltime,
+                                design = 1, rprob = get(paste0("r", a1ind)),
+                                sigma = ifelse(!is.null(uneqsdDTR), 
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, 1, 1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, 1, 1)) == 3))]][i],
+                                                      sigma[i]),
+                                               sigma[i]),
+                                sigma.cond = get(paste0("sigma.r", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
+             }), envir = varEnv)
+      assign(paste0("sigma.r", a1ind, "0"),
+             sapply(1:length(times), function(i) {
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
+                                design = 1, rprob = get(paste0("r", a1ind)),
+                                sigma = ifelse(!is.null(uneqsdDTR),
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, 1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, -1, 1)) == 3))]][i],
+                                                      sigma[i]),
+                                               sigma[i]),
+                                sigma.cond = get(paste0("sigma.nr", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
+             }), envir = varEnv)
+      assign(paste0("sigma.nr", a1ind, "0"),
+             sapply(1:length(times), function(i) {
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
+                                design = 1, rprob = get(paste0("r", a1ind)),
+                                sigma = ifelse(!is.null(uneqsdDTR),
+                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, -1)) == 3)) > 0,
+                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
+                                                        sum(dtr == c(2 * a1ind -1, -1, -1)) == 3))]][i],
+                                                      sigma[i]),
+                                               sigma[i]),
+                                sigma.cond = get(paste0("sigma.r", a1ind, "0"), envir = varEnv)[i], gammas, lambdas)
+             }), envir = varEnv)
+    }))
+    
+    assign("cormat.r11", cormat.r1, env = varEnv)
+    assign("cormat.r01", cormat.r0, env = varEnv)
+    
+    for (a1ind in c(0, 1)) {
+      if (corstr %in% c("exchangeable", "identity")) {
+        x1 <- x2 <- x3 <- cormat.exch(rho, length(times))
+      } else if (corstr == "ar1") {
+        x1 <- x2 <- x3 <- cormat.ar1(rho, length(times))
+      }
+      for(i in 1:nrow(m)) {
+        x1[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.r", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, "1"), x1, envir = varEnv)
+      
+      for(i in 1:nrow(m)) {
+        x2[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.nr", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.r", a1ind, "0"), x2, envir = varEnv)
+      
+      for(i in 1:nrow(m)) {
+        x3[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 1, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, "0"), x3, envir = varEnv)
+    }
+  } else if (design == 2) {
+    if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
+      stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
+    invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
+      if (!is.null(uneqsdDTR)) {
+        # Check if the current embedded DTR (x) is in uneqsdDTR; if it is, store the index
+        # (If it's not, uneqsdDTRindex has length 0)
+        uneqsdDTRindex <- which(sapply(uneqsdDTR, function(dtr) {
+          sum(c(x[1], x[2], x[3]) == dtr) == 3
+        }))
+        if (length(uneqsdDTRindex) == 0) {
+          sigmaStar <- sigma
+        } else {
+          # If the current DTR is in uneqsdDTR, extract the appropriate SD and vectorize it as usual
+          # i.e., create a length(times)-vector where each entry is the marginal SD at that time
+          sigmaStar <- uneqsd[uneqsdDTRindex]
+          if (length(sigmaStar) == 1 & sum(times > spltime) > 1) {
+            sigmaStar <- rep(sigmaStar, sum(times > spltime))
+          }
+          if (length(sigmaStar) != length(times)) {
+            sigmaStar <- c(sigma[times <= spltime], sigmaStar)
+          }
+        }
+      } else {
+        # If no uneqsdDTR, use the common SD
+        sigmaStar <- sigma
+      }
+      
+      # Generate conditional SDs for non-responders and assign them to appropriate variables.
+      assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[3] + 1) / 2),
+             unname(sapply(1:length(times), function(i) {
+               generate.cond.sd(a1 = x[1], r = 0, a2R = x[2], a2NR = x[3], t = times[i], spltime, design = 2, 
+                                rprob = get(paste0("r", (x[1] + 1) / 2)),
+                                sigma = sigmaStar[i],
+                                sigma.cond = get(paste0("sigma.r", (x[1] + 1) / 2))[i],
+                                gammas = gammas, lambdas = lambdas)
+             })), envir = varEnv)
+    }))
+    
+    NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
+    
+    for (j in 1:nrow(NRgrid)) {
+      a1ind <- NRgrid$a1ind[j]
+      a2NRind <- NRgrid$a2NRind[j]
+      
+      if (corstr %in% c("exchangeable", "identity")) {
+        x <- cormat.exch(rho, length(times))
+      } else if (corstr == "ar1") {
+        x <- cormat.ar1(rho, length(times))
+      }
+      
+      for (i in 1:nrow(m)) {
+        x[m[i, 1], m[i, 2]] <- 
+          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 0, a2NR = 2 * a2NRind - 1,
+                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+                            design = 2, rprob = get(paste0("r", a1ind)),
+                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
+                            rho = rho,
+                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = varEnv)
+    }
+  } else 
+    stop("design 3 hasn't been implemented in conditionalVarmat")
+  
+  
+  condVarmats <- lapply(1:nrow(A), function(dtr) {
+    a1ind   <- (A$a1[dtr] + 1) / 2
+    R       <- A$r[dtr]
+    a2Rind  <- (A$a2R[dtr] + 1) / 2
+    a2NRind <- (A$a2NR[dtr] + 1) / 2
+    xsd  <- diag(get(paste0("sigma.", ifelse(R == 1, "r", "nr"),
+                            a1ind, ifelse(R == 1, a2Rind, a2NRind)),
+                     envir = varEnv))
+    xcor <- get(paste0("cormat.", ifelse(R == 1, "r", "nr"),
+                       a1ind, ifelse(R == 1, a2Rind, a2NRind)),
+                envir = varEnv)
+    xsd %*% xcor %*% xsd
+  })
+  names(condVarmats) <- apply(A, 1, function(x) paste(x, collapse = " "))
+  condVarmats
 }
 
 ### Construct a t-by-t AR(1) correlation matrix with parameter rho
@@ -130,7 +402,7 @@ esteqn.jacobian <- function(d, V, times, spltime, design) {
   })) / -length(unique(d$id))
 }
 
-estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
+  estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
   params.hat <- start
   j <- 0
   epsilon <- 10
@@ -531,199 +803,10 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
   }
 }
 
-sim <- function(n = NULL, gammas, lambdas, times, spltime,
-                alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
-                r = NULL, r1 = r, r0 = r,
-                uneqsdDTR = NULL, uneqsd = NULL, 
-                sigma, sigma.r1 = sigma, sigma.r0 = sigma,
-                corstr = c("identity", "exchangeable", "ar1"),
-                rho = NULL, rho.r1 = rho, rho.r0 = rho,
-                L = NULL, 
-                constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
-                niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
-                notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
-  
-  # n:        number of participants in trial
-  # gammas:   Parameters from marginal mean model
-  # lambdas:  Parameters for response "offset" in conditional model
-  # r:        Probability of response to first-stage treatment (assuming equal for both txts)
-  # r1:       Probability of response to A1 = 1  (assuming not equal to r0; r must be NULL)
-  # r0:       Probability of response to A1 = -1 (assuming not equal to r1; r must be NULL)
-  # times:    Vector of times at which measurements are collected (currently limited to length three)
-  # spltime:  Time (contained in times) at which re-randomization occurs
-  # uneqsdDTR: list of vectors of (a1, a2R, a2NR) for DTR(s) which do not have the same variance as the others
-  # sigma:    Marginal variance of Y (assumed constant over time and DTR)
-  # sigma.r1: Conditional variance of Y for responders to treatment A1 = 1
-  # sigma.r0: Conditional variance of Y for responders to treatment A1 = -1
-  # corstr:   Character string, one of "identity", "exch"/"exchangeable", "unstr"/"unstructured", or "custom".
-  #            This is the TRUE form of the within-person correlation structure
-  #           Form of V to use in estimating equations.
-  # rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to generate data 
-  #            (assumed constant across DTRs)
-  
-  # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
-  if (is.null(r) & is.null(r1) & is.null(r0)) stop("You must provide either r or both r1 and r0.")
-  ## TODO: Finish input handling
-  
-  # Handle uneqsdDTR
-  if (design == 1 & is.null(uneqsdDTR)) {
-    if (length(unique(marginal.model(dtrIndex(1)$a1, dtrIndex(1)$a2R, dtrIndex(1)$a2NR, 2, spltime, 1, gammas))) == 8)
-      stop(paste("For design I, you must provide a list of vectors of (a1, a2R, a2NR) for DTRs which do not have the same variance as others.\n",
-               "Alternatively, you may specify gammas such that there are only 4 unique DTR means (2 per first-stage treatment)."))
-  }
-  if (design == 1 & !is.null(uneqsdDTR) & !is.list(uneqsdDTR))
-    stop("uneqsdDTR must be either NULL or a list.")
-  
-  ## Handle correlation structure
-  corstr <- match.arg(corstr)
-  if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
-  
-  ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
-  # if (design == 1) constant.var.dtr <- FALSE
-  
-  # If n is not provided, compute it from the other inputs
-  if (is.null(n)) 
-    n <- sample.size(delta = delta, r = ifelse(is.null(r), min(r0, r1), r),
-                     rho = rho, alpha = alpha, power = power,
-                     design = design, round = round,
-                     conservative = conservative)
-  
-  ## Simulate
-  cat(paste0("********************\n",
-             "Starting simulation!\n",
-             "delta = ", delta, "\n",
-             "corstr = exch(", rho, ")\n",
-             "r0 = ", r0, ", r1 = ", r1, "\n",
-             ifelse(is.null(postIdentifier), NULL, postIdentifier),
-             "\nn = ", n, "\n",
-             niter, " iterations.\n",
-             "********************\n"))
-  results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
-                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
-                       
-                       d <- SMART.generate(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                           rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, balanceRand = balanceRand, empirical = empirical)
-                       if (d$valid == FALSE) {
-                         result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
-                                        "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
-                                        "sigma2.hat" = matrix(ncol = (length(times) * (1 - constant.var.time) * constant.var.dtr) +
-                                                                4 * (1 - constant.var.dtr) +
-                                                                (constant.var.time * constant.var.dtr),
-                                                              nrow = (length(times) * (1 - constant.var.dtr) +
-                                                                        (4 * (1 - constant.var.dtr) * constant.var.time) +
-                                                                        (constant.var.time * constant.var.dtr))),
-                                        "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
-                                        "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
-                                        "alpha" = alpha, "power.target" = power)
-                         # if (save.data) {
-                         #   result[["data"]] <- list(d$data)
-                         # }
-                         return(result)
-                       } else {
-                         d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
-                                       times = times, direction = "long", v.names = "Y")
-                         d1 <- d1[order(d1$id, d1$time), ]
-                         
-                         param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
-                         
-                         sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                       pool.time = constant.var.time, pool.dtr = constant.var.dtr)
-                         
-                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-                         
-                         # Compute variance matrices for all conditional cells
-                         condVars <- lapply(split.SMART(d$data), function(x) {
-                           var(subset(x, select = grep("Y", names(x), value = TRUE)))
-                         })
-                         
-                         # Iterate parameter estimation
-                         if (corstr == "identity" | (corstr == "exchangeable" & rho == 0)) {
-                           outcome.var <- varmat(sigma2.hat, 0, times, "exchangeable")
-                           param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
-                           iter <- 1
-                         } else if (corstr == "exchangeable" & rho != 0) {
-                           outcome.var <- varmat(sigma2.hat, rho.hat, times, "exchangeable")
-                           param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
-                           # Iterate until estimates of gammas and rho converge
-                           for (i in 1:maxiter.solver) {
-                             sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                           pool.time = constant.var.time, pool.dtr = constant.var.dtr)
-                             rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exchangeable")
-                             param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
-                             if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
-                                 (rho.new - rho.hat)^2 <= tol) {
-                               param.hat <- param.new
-                               sigma2.hat <- sigma2.new
-                               rho.hat <- rho.new
-                               iter <- i
-                               break
-                             } else {
-                               param.hat <- param.new
-                               sigma2.hat <- sigma2.new
-                               rho.hat <- rho.new
-                               iter <- i
-                             }
-                           }
-                           param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
-                         }
-                         
-                         confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)
-                         confUB <- L %*% param.hat + sqrt(L %*% param.var %*% L) * qnorm(.975)
-                         
-                         coverage <- ifelse(confLB <= L %*% gammas & L %*% gammas <= confUB, 1, 0)
-                         
-                         pval <- 1 - pnorm(as.numeric((L %*% param.hat) / sqrt(L %*% param.var %*% L)))
-                         
-                         result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
-                                        "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
-                                        "iter" = iter, "condVars" = condVars)
-                         if (save.data) {
-                           result[["data"]] <- list(d$data)
-                         }
-                         
-                         return(result)
-                       }
-                     }
-  
-  results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
-                    "corstr" = corstr, "rho" = rho, "rho.r0" = rho.r0, "rho.r1" = rho.r1,
-                    "r0" = r0, "r1" = r1, "niter" = niter, "sharp" = !conservative), results)
-  
-  test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
-                     n = results$valid, p = results$power.target, alternative = "two.sided")
-
-  results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
-
-  postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""),
-                          "\ntrue corr structure = ",
-                          switch(corstr, "id" =, "identity" = "identity",
-                                 "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")),
-                          "\nr0 = ", r0, ", r1 = ", r1,
-                          "\neffect size = ", delta,
-                          "\nn = ", n,
-                           "\ntarget power = ", power,
-                          "\nempirical power = ", results$power,
-                          " (p = ", round(results$pval.power, 3), ")"
-                          )
-  
-  class(results) <- c("simResult", class(results))
-  
-  if (notify) {
-    try(slackr_bot(postMessageText))
-    try(slackr_bot(print(results)))
-    # pbPost("note", "Simulation Complete!", body = postMessageText, recipients = pbDevice)
-  }
-  
-  return(results)
-}
-
-
 ### Wrapper for all the estimation functions
 #' Estimation for repeated-measures SMART data
 #'
-#' @param data A `data.frame` with the appropriate structure (see `SMART.generate`)
+#' @param data A `data.frame` with the appropriate structure (see `generateSMART`)
 #' @param corstr A string indicating the type of working correlation structure. One of `"identity"`/`"id"`, `"exchangeable"`/`"exch"`. 
 #' @param times A vector of times at which the repeated-measures outcome has been collected
 #' @param spltime The time point (in `times`) immediately after which response/non-response is assessed and participants are re-randomized
@@ -794,479 +877,6 @@ SMART.estimate <- function(data, corstr = c("identity", "exchangeable", "ar1"),
   }
   
   
-}
-
-
-## Function to generate SMART data
-SMART.generate <- function(n, times, spltime, r1, r0, gammas, lambdas, design, balanceRand = FALSE,
-                           sigma, sigma.r1, sigma.r0, corstr = c("identity", "exchangeable", "ar1"),
-                           uneqsdDTR = NULL, uneqsd = NULL,
-                           rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
-  
-  # n:        number of participants in trial
-  # gammas:   Parameters from marginal mean model
-  # mean.r1:  Vector of means for responders to A1 = 1 in the second stage (IF DESIGN = 1, mean for A2R = 1)
-  # mean.r0:  Vector of means for responders to A1 = -1 in the second stage (IF DESIGN = 1, mean for A2R = 1)
-  # r:        Probability of response to first-stage treatment (assuming equal for both txts)
-  # r1:       Probability of response to A1 = 1  (assuming not equal to r0; r must be NULL)
-  # r0:       Probability of response to A1 = -1 (assuming not equal to r1; r must be NULL)
-  # times:    Vector of times at which measurements are collected (currently limited to length three)
-  # spltime:  Time (contained in times) at which re-randomization occurs
-  # sigma:    Marginal variance of Y (assumed constant over time and DTR)
-  # sigma.r1: Vector of conditional variances of Y for responders to treatment A1 = 1 in the second stage 
-  # sigma.r0: Vector of conditional variances of Y for responders to treatment A1 = -1 in the second stage
-  # corstr:   True correlation structure
-  
-  # uneqvar:  Vector of same length as uneqsdDTR. If not all DTRs have the same variance (i.e., sigma^2),
-  #           this is the sigma
-  # rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to compute V 
-  #           (assumed constant across DTRs)
-  # rho.r1:   Vector of conditional correlations between Ys for responders to treatment A1 = 1 in the second stage
-  # rho.r0:   Exchangeable correlation for responders to A1 == -1
-  
-  ## Input Checks
-  if (sum(times > spltime) == 0) stop("Currently spltime must be less than max(times)")
-  
-  ## Handle correlation structure
-  corstr <- match.arg(corstr)
-  if (corstr == "identity") {
-    rho <- rho.r1 <- rho.r0 <- 0
-  }
-  
-  ## Make sure design input is valid
-  if (!(design %in% 1:3)) stop("Invalid design choice. Must be one of 1-3.")
-  
-  ## If sigma is not a vector of length length(times), make it that way (or throw an error)
-  if (length(sigma) == 1) {
-    sigma <- rep(sigma, length(times))
-  } else if (length(sigma) != length(times)) {
-    stop("sigma must either be length-1 or the same length as times.")
-  }
-
-  ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
-  ## (i.e., more than one measurement after re-randomization)
-  if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
-    sigma.r1 <- rep(sigma.r1, sum(times > spltime))
-  }
-  if (length(sigma.r0) == 1 & sum(times > spltime) > 1) {
-    sigma.r0 <- rep(sigma.r0, sum(times > spltime))
-  }
-  if (length(sigma.r1) != length(times)) {
-    sigma.r1 <- c(sigma[times <= spltime], sigma.r1)
-  }
-  if (length(sigma.r0) != length(times)) {
-    sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
-  }
-  
-  ## Generate treatment allocations and response
-  d <- data.frame("id"   = 1:n,
-                  "A1"   = 0,
-                  "R"    = NA,
-                  "A2R"  = 0,
-                  "A2NR" = 0)
-  
-  if (balanceRand) {
-    s <- sample(1:n, size = floor(n/2), replace = FALSE)
-    d$A1[s]  <- 1
-    d$A1[-s] <- -1
-  } else {
-    d$A1 <- 2 * rbinom(n, 1, 0.5) - 1
-  }
-  d$R[d$A1 ==  1] <- rbinom(sum(d$A1 == 1), 1, r1)
-  d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
-  
-  if (design == 1) {
-    if (balanceRand) {
-      A1Rcombos <- expand.grid("A1" = c(1, -1), "R" = c(0, 1))
-      for (i in 1:nrow(A1Rcombos)) {
-        s <- sample(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]),
-                    floor(sum(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]) / 2),
-                    replace = FALSE)
-        if (A1Rcombos$R[i] == 1) {
-          d$A2R[s] <- 1
-          d$A2R[setdiff(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]), s)] <- -1
-        } else {
-          d$A2NR[s] <- 1
-          d$A2NR[setdiff(which(d$A1 == A1Rcombos$A1[i] & d$R == A1Rcombos$R[i]), s)] <- -1
-        }
-      }
-    } else {
-      d$A2R[d$A1 == 1  & d$R == 1] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 1), 1, .5) - 1
-      d$A2R[d$A1 == -1 & d$R == 1] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 1), 1, .5) - 1
-      d$A2NR[d$A1 == 1  & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
-      d$A2NR[d$A1 == -1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
-    }
-    
-    d$weight <- 4
-    
-    d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
-    d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
-    d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
-    d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
-    d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
-    d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
-    d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
-    d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
-  } else if (design == 2) {
-    d$A2NR[d$A1 == 1  & d$R == 0]  <- 2 * rbinom(sum(d$A1 == 1  & d$R == 0), 1, .5) - 1
-    d$A2NR[d$A1 == -1 & d$R == 0]  <- 2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
-    d$weight <- 2 * (d$R + 2 * (1 - d$R))
-    
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
-  } else {
-    d$A2NR[d$A1 == 1 & d$R == 0] <- 2 * rbinom(sum(d$A1 == 1 & d$R == 0), 1, .5) - 1
-    d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
-    
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-    d$dtr1 <- as.numeric(with(d, (A1 == -1)))
-  }
-  
-  ## Check validity of treatment allocations
-  if (!validTrial(d, design)) {
-    return(list("data" = d, "valid" = F))
-  }
-  
-  class(d) <- c("SMART", class(d))
-    
-  ## Generate Y's at their (conditional) means
-  d <- do.call("rbind", lapply(split.SMART(d), function(z) {
-    x <- do.call("data.frame", lapply(times, function(time) {
-      conditional.model(z$A1, z$R, z$A2R, z$A2NR,
-                        time, spltime, design, 
-                        get(paste0("r", (1 + unique(z$A1)) / 2)), 
-                        gammas, lambdas)
-    }))
-    names(x) <- sapply(times, function(t) paste0("Y", t))
-    z <- cbind(z, x)
-  }))
-  d <- d[order(d$id), ]
-  rownames(d) <- d$id
-  
-  # Create an environment to store variance information as assigned during
-  # loops, etc.
-  varEnv <- new.env()
-  
-  ## Compute conditional standard deviations for non-responders
-  if (design == 1) {
-    dtrs <- do.call("rbind", dtrIndex(design))
-    if (!is.null(uneqsdDTR)) {
-      # Determine which DTRs are the unequal variance ones
-      uneqsdDTRindex <- sapply(1:2, function(i) 
-        which((dtrs[1, ] == uneqsdDTR[[i]][1]) + 
-                (dtrs[2, ] == uneqsdDTR[[i]][2]) +
-                (dtrs[3, ] == uneqsdDTR[[i]][3]) == 3)
-      )
-      # Compute the standard deviation for times after spltime in the DTR with unequal variance
-      uneqsd <- lapply(uneqsdDTR, function(dtr) {
-        sapply(times, function(t) {
-          generate.sd(sigma[which(times == t)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], t = t, spltime = spltime, 
-                      design, rprob = get(paste0("r", (dtr[1] + 1) / 2)), gammas, lambdas)
-        })
-      })
-    }
-    assign("sigma.r11", sigma.r1, envir = varEnv)
-    assign("sigma.r01", sigma.r0, envir = varEnv)
-    
-    #Loop over indices for first-stage treatment and compute conditional standard deviations
-    invisible(sapply(c(0, 1), function(a1ind) {
-      # Use DTR (a1ind, 1, 1) to 
-      assign(paste0("sigma.nr", a1ind, "1"),
-             sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1, t = times[i], spltime = spltime,
-                                design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(!is.null(uneqsdDTR), 
-                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, 1, 1)) == 3)) > 0,
-                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                        sum(dtr == c(2 * a1ind -1, 1, 1)) == 3))]][i],
-                                                      sigma[i]),
-                                               sigma[i]),
-                                sigma.cond = get(paste0("sigma.r", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
-               }), envir = varEnv)
-      assign(paste0("sigma.r", a1ind, "0"),
-             sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
-                                design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(!is.null(uneqsdDTR),
-                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, 1)) == 3)) > 0,
-                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                        sum(dtr == c(2 * a1ind -1, -1, 1)) == 3))]][i],
-                                                      sigma[i]),
-                                               sigma[i]),
-                                sigma.cond = get(paste0("sigma.nr", a1ind, "1"), envir = varEnv)[i], gammas, lambdas)
-             }), envir = varEnv)
-      assign(paste0("sigma.nr", a1ind, "0"),
-             sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
-                                design = 1, rprob = get(paste0("r", a1ind)),
-                                sigma = ifelse(!is.null(uneqsdDTR),
-                                               ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, -1)) == 3)) > 0,
-                                                      uneqsdDTR.sd[[which(sapply(uneqsdDTR, function(dtr) 
-                                                        sum(dtr == c(2 * a1ind -1, -1, -1)) == 3))]][i],
-                                                      sigma[i]),
-                                               sigma[i]),
-                                sigma.cond = get(paste0("sigma.r", a1ind, "0"), envir = varEnv)[i], gammas, lambdas)
-             }), envir = varEnv)
-    }))
-  } else if (design == 2) { ## Generate conditional standard deviations in Design 2
-    if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
-      stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
-    assign("sigma.r10", sigma.r1, envir = varEnv)
-    assign("sigma.r00", sigma.r0, envir = varEnv)
-    # rm("sigma.r1", "sigma.r0")
-    invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
-      if (!is.null(uneqsdDTR)) {
-        # Check if the current embedded DTR (x) is in uneqsdDTR; if it is, store the index
-        # (If it's not, uneqsdDTRindex has length 0)
-        uneqsdDTRindex <- which(sapply(uneqsdDTR, function(dtr) {
-          sum(c(x[1], x[2], x[3]) == dtr) == 3
-        }))
-        if (length(uneqsdDTRindex) == 0) {
-          sigmaStar <- sigma
-        } else {
-          # If the current DTR is in uneqsdDTR, extract the appropriate SD and vectorize it as usual
-          # i.e., create a length(times)-vector where each entry is the marginal SD at that time
-          sigmaStar <- uneqsd[uneqsdDTRindex]
-          if (length(sigmaStar) == 1 & sum(times > spltime) > 1) {
-            sigmaStar <- rep(sigmaStar, sum(times > spltime))
-          }
-          if (length(sigmaStar) != length(times)) {
-            sigmaStar <- c(sigma[times <= spltime], sigmaStar)
-          }
-        }
-      } else {
-        # If no uneqsdDTR, use the common SD
-        sigmaStar <- sigma
-      }
-      
-      # Generate conditional SDs for non-responders and assign them to appropriate variables.
-      assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[3] + 1) / 2),
-             unname(sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = x[1], r = 0, a2R = x[2], a2NR = x[3], t = times[i], spltime, design = 2, 
-                                rprob = get(paste0("r", (x[1] + 1) / 2)),
-                                sigma = sigmaStar[i],
-                                sigma.cond = get(paste0("sigma.r", (x[1] + 1) / 2))[i],
-                                gammas = gammas, lambdas = lambdas)
-             })), envir = varEnv)
-    }))
-  } else {
-    
-  }
-  
-  # Construct a matrix of (X,Y) coordinates which need to be adjusted in the conditional cor matrices
-  # i.e., identify which cells of the conditional cor matrix correspond to correlations between the 
-  # second stage and times before the second randomization.
-  # The rows of m are the coordinates (row, column)
-  m <- expand.grid(which(times > spltime), which(times <= spltime))
-  m <- rbind(as.matrix(m), as.matrix(m[, 2:1]))
-  m <- rbind(m, expand.grid(which(times > spltime), which(times > spltime)))
-  m <- subset(m, Var1 != Var2)
-  
-  # Construct "base" correlation matrices for responders 
-  # (these are the marginal correlation matrices and will be modified below)
-  if (corstr == "identity") {
-    cormat.r1 <- cormat.r0 <- diag(rep(1, length(times)))
-  } else if (corstr == "exchangeable") {
-    cormat.r1 <- cormat.r0 <- cormat.exch(rho, length(times))
-  } else if (corstr == "ar1") {
-    cormat.r1 <- cormat.r0 <- cormat.ar1(rho, length(times))
-  }
-  # Create responders' correlation matrices by looping over m and computing appropriate entries
-  for (i in 1:dim(m)[1]) {
-    # If both times are after the second randomization, correlation between times is the provided value
-    # if (min(m[i, ]) > which(times == spltime)) {
-      cormat.r1[m[i, 1], m[i, 2]] <- rho.r1
-      cormat.r0[m[i, 1], m[i, 2]] <- rho.r0
-    # } else {
-      # If both times aren't after the second randomization, compute the correlation required to 
-      # achieve the proper marginalized covariance
-      # cormat.r1[m[i, 1], m[i, 2]] <- cormat.r1[m[i, 1], m[i, 2]] * sigma[max(m[i, ])] / sigma.r1[max(m[i, ])]
-      # cormat.r0[m[i, 1], m[i, 2]] <- cormat.r0[m[i, 1], m[i, 2]] * sigma[max(m[i, ])] / sigma.r0[max(m[i, ])]
-    # }
-  }
-  
-  if (design == 1) {
-    cormat.r11 <- cormat.r1
-    cormat.r01 <- cormat.r0
-    
-    for (a1ind in c(0, 1)) {
-      if (corstr %in% c("exchangeable", "identity")) {
-        x1 <- x2 <- x3 <- cormat.exch(rho, length(times))
-      } else if (corstr == "ar1") {
-        x1 <- x2 <- x3 <- cormat.ar1(rho, length(times))
-      }
-      for(i in 1:nrow(m)) {
-        x1[m[i, 1], m[i, 2]] <- 
-          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1,
-                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 1, rprob = get(paste0("r", a1ind)),
-                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 2]],
-                            rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
-                            gammas = gammas, lambdas = lambdas)
-      }
-      assign(paste0("cormat.nr", a1ind, "1"), x1, envir = varEnv)
-      
-      for(i in 1:nrow(m)) {
-        x2[m[i, 1], m[i, 2]] <- 
-          generate.cond.cor(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1,
-                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 1, rprob = get(paste0("r", a1ind)),
-                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 2]],
-                            rho = rho,
-                            rho.ref = get(paste0("cormat.nr", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
-                            gammas = gammas, lambdas = lambdas)
-      }
-      assign(paste0("cormat.r", a1ind, "0"), x2, envir = varEnv)
-      
-      for(i in 1:nrow(m)) {
-        x3[m[i, 1], m[i, 2]] <- 
-          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1,
-                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 1, rprob = get(paste0("r", a1ind)),
-                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
-                            rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
-                            gammas = gammas, lambdas = lambdas)
-      }
-      assign(paste0("cormat.nr", a1ind, "0"), x3, envir = varEnv)
-    }
-  } else if (design == 2) {
-    assign("cormat.r10", cormat.r1, envir = varEnv)
-    assign("cormat.r00", cormat.r0, envir = varEnv)
-    
-    NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
-    
-    for (j in 1:nrow(NRgrid)) {
-      a1ind <- NRgrid$a1ind[j]
-      a2NRind <- NRgrid$a2NRind[j]
-      
-      if (corstr %in% c("exchangeable", "identity")) {
-        x <- cormat.exch(rho, length(times))
-      } else if (corstr == "ar1") {
-        x <- cormat.ar1(rho, length(times))
-      }
-      
-      for (i in 1:nrow(m)) {
-        x[m[i, 1], m[i, 2]] <- 
-          generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 0, a2NR = 2 * a2NRind - 1,
-                            t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 2, rprob = get(paste0("r", a1ind)),
-                            sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
-                            rho = rho,
-                            rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
-                            gammas = gammas, lambdas = lambdas)
-      }
-      assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = varEnv)
-    }
-  }
-  
-  d <- do.call("rbind",
-               lapply(split.SMART(d), function(x) {
-                 a1ind   <- as.character((unique(x$A1) + 1) / 2)
-                 a2Rind  <- ifelse(unique(x$A2R) == 0,  "0", as.character((unique(x$A2R) + 1) / 2))
-                 a2NRind <- ifelse(unique(x$A2NR) == 0, "0", as.character((unique(x$A2NR) + 1) / 2))
-                 xcor <- get(paste0("cormat.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
-                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)), envir = varEnv)
-                 xvar <- get(paste0("sigma.", ifelse(unique(x$R) == 1, "r", "nr"), a1ind,
-                                    ifelse(unique(x$R) == 1, a2Rind, a2NRind)), envir = varEnv)
-                 
-                 x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                   mvrnorm(
-                     n = nrow(x),
-                     mu = rep(0, length(times)),
-                     Sigma = diag(xvar) %*% xcor %*% diag(xvar),
-                     empirical = empirical
-                   )
-                 # if (unique(x$R) == 1 & (design != 1 | (design == 1 & a2Rind == 0))) {
-                 # x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                 #   mvrnorm(
-                 #     dim(x)[1],
-                 #     mu = rep(0, length(times)),
-                 #     Sigma =
-                 #       diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                 #       get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                 #       diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                 #     empirical = empirical
-                 #   )
-                 # } else if (unique(x$R) == 1 & design == 1 & a2Rind == 1) {
-                 #   cormat.r <- cormat.exch(rho, length(times))
-                 #   for (i in 1:dim(m)[1]) {
-                 #     cormat.nr[m[i, 1], m[i, 2]] <- 
-                 #       generate.cond.cor(a1 = unique(x$A1), r = unique(x$R), a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                 #                         t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                 #                         design = design, rprob = get(paste0("r", a1ind)),
-                 #                         sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                 #                         sigma.t1.ref = get(paste0("sigma.nr", a1ind))[m[i, 1]],
-                 #                         sigma.t2.ref = get(paste0('sigma.nr', a1ind))[m[i, 2]],
-                 #                         rho = cormat.nr[m[i, 1], m[i, 2]],
-                 #                         rho.r = get(paste0("cormat.nr", a1ind))[m[i, 1], m[i, 2]],
-                 #                         gammas = gammas, lambdas = lambdas)
-                 #   }
-                 #   x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                 #     mvrnorm(
-                 #       dim(x)[1],
-                 #       mu = rep(0, length(times)),
-                 #       Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                 #         get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                 #         diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                 #       empirical = empirical
-                 #     )
-                 # } else if (design == 2) {
-                 #   if (unique(x$R) == 0) {
-                 #     cormat.nr <- cormat.exch(rho, length(times))
-                 #     for (i in 1:dim(m)[1]) {
-                 #       cormat.nr[m[i, 1], m[i, 2]] <- 
-                 #         generate.cond.cor(a1 = unique(x$A1), r = 0, a2R = unique(x$A2R), a2NR = unique(x$A2NR),
-                 #                           t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                 #                           design = design, rprob = get(paste0("r", a1ind)),
-                 #                           sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
-                 #                           sigma.t1.r = get(paste0("sigma.r", a1ind))[m[i, 1]],
-                 #                           sigma.t2.r = get(paste0('sigma.r', a1ind))[m[i, 2]],
-                 #                           rho = cormat.nr[m[i, 1], m[i, 2]],
-                 #                           rho.r = get(paste0("cormat.r", a1ind))[m[i, 1], m[i, 2]],
-                 #                           gammas = gammas, lambdas = lambdas)
-                 #     }
-                 #     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                 #       mvrnorm(
-                 #         dim(x)[1],
-                 #         mu = rep(0, length(times)),
-                 #         Sigma = diag(get(paste0("sigma.nr", a1ind, a2NRind))) %*%
-                 #           cormat.nr %*%
-                 #           diag(get(paste0("sigma.nr", a1ind, a2NRind))),
-                 #         empirical = empirical
-                 #       )
-                 #   }
-                 #   else {
-                 #     x[, grepl("Y", names(x))] <- x[, grepl("Y", names(x))] +
-                 #       mvrnorm(
-                 #         dim(x)[1],
-                 #         mu = rep(0, length(times)),
-                 #         Sigma = diag(get(paste0("sigma.r", a1ind, a2Rind))) %*%
-                 #           get(paste0("cormat.r", a1ind, a2Rind)) %*%
-                 #           diag(get(paste0("sigma.r", a1ind, a2Rind))),
-                 #         empirical = empirical
-                 #       )
-                 #   }
-                 # }
-                 x
-               })
-  )
-  
-  d <- d[order(d$id), ]
-  rownames(d) <- 1:n
-  return(list("data" = d, "valid" = T))
 }
 
 ### split.data.frame doesn't quite work to split data from a SMART into conditional cells.
