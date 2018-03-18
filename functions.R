@@ -785,7 +785,7 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
   if (design == 1) {
     designEffect <- 2
     if (!conservative) {
-      correction <- (1 - rho)^2 - (1 - rho) * rho^2 / (2 * (1 + rho))
+      correction <- (1-rho^2) - (1-rho)*rho^2 / (2*(1+rho))
     }
   } else if (design == 2) {
     designEffect <- 2 - r
