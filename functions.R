@@ -243,14 +243,21 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       assign(paste0("cormat.nr", a1ind, "0"), x3, envir = varEnv)
     }
   } else if (design == 2) {
+    assign("sigma.r10", sigma.r1, envir = varEnv)
+    assign("sigma.r00", sigma.r0, envir = varEnv)
+    
+    assign("cormat.r10", cormat.r1, env = varEnv)
+    assign("cormat.r00", cormat.r0, env = varEnv)
+    
+    dtrs <- dtrIndex(2)
     if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
       stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
-    invisible(apply(unique(subset(d, R == 0, select = c("A1", "A2R", "A2NR"))), 1, function(x) {
+    invisible(sapply(1:4, function(i) {
       if (!is.null(uneqsdDTR)) {
         # Check if the current embedded DTR (x) is in uneqsdDTR; if it is, store the index
         # (If it's not, uneqsdDTRindex has length 0)
         uneqsdDTRindex <- which(sapply(uneqsdDTR, function(dtr) {
-          sum(c(x[1], x[2], x[3]) == dtr) == 3
+          sum(c(dtrs$a1[i], dtrs$a2R[i], dtrs$a2NR[i]) == dtr) == 3
         }))
         if (length(uneqsdDTRindex) == 0) {
           sigmaStar <- sigma
@@ -271,12 +278,13 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       }
       
       # Generate conditional SDs for non-responders and assign them to appropriate variables.
-      assign(paste0("sigma.nr", (x[1] + 1) / 2, (x[3] + 1) / 2),
-             unname(sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = x[1], r = 0, a2R = x[2], a2NR = x[3], t = times[i], spltime, design = 2, 
-                                rprob = get(paste0("r", (x[1] + 1) / 2)),
-                                sigma = sigmaStar[i],
-                                sigma.cond = get(paste0("sigma.r", (x[1] + 1) / 2))[i],
+      assign(paste0("sigma.nr", (dtrs$a1[i] + 1) / 2, (dtrs$a2NR[i] + 1) / 2),
+             unname(sapply(1:length(times), function(j) {
+               generate.cond.sd(a1 = dtrs$a1[i], r = 0, a2R = dtrs$a2R[i], a2NR = dtrs$a2NR[i],
+                                t = times[j], spltime, design = 2, 
+                                rprob = get(paste0("r", (dtrs$a1[j] + 1) / 2)),
+                                sigma = sigmaStar[j],
+                                sigma.cond = get(paste0("sigma.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[j],
                                 gammas = gammas, lambdas = lambdas)
              })), envir = varEnv)
     }))
@@ -299,8 +307,8 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
                             design = 2, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
-                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 1]],
-                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0))[m[i, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
                             rho = rho,
                             rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
@@ -314,7 +322,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
   condVarmats <- lapply(1:nrow(A), function(dtr) {
     a1ind   <- (A$a1[dtr] + 1) / 2
     R       <- A$r[dtr]
-    a2Rind  <- (A$a2R[dtr] + 1) / 2
+    a2Rind  <- ifelse(A$a2R[dtr] == 0, 0, (A$a2R[dtr] + 1) / 2)
     a2NRind <- (A$a2NR[dtr] + 1) / 2
     xsd  <- diag(get(paste0("sigma.", ifelse(R == 1, "r", "nr"),
                             a1ind, ifelse(R == 1, a2Rind, a2NRind)),
