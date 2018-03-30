@@ -45,7 +45,6 @@
 #' @param L 
 #' @param constant.var.time 
 #' @param constant.var.dtr 
-#' @param perfect 
 #' @param niter 
 #' @param tol 
 #' @param maxiter.solver 
@@ -68,7 +67,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 corstr = c("identity", "exchangeable", "ar1"),
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
                 L = NULL, varmats = NULL,
-                constant.var.time = TRUE, constant.var.dtr = TRUE, perfect = FALSE,
+                constant.var.time = TRUE, constant.var.dtr = TRUE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                 save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
                 notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
@@ -209,6 +208,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
                     "corstr" = corstr, "rho" = rho, "rho.r0" = rho.r0, "rho.r1" = rho.r1,
+                    "sigma" = sigma, "sigma.r0" = sigma.r0, "sigma.r1" = sigma.r1,
                     "r0" = r0, "r1" = r1, "niter" = niter, "sharp" = !conservative), results)
   
   test <- binom.test(x = sum(results$pval <= results$alpha / 2, na.rm = T) + sum(results$pval >= 1 - results$alpha / 2, na.rm = T),
