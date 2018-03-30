@@ -1,8 +1,6 @@
 ### Functions for simulations of SMARTs with continuous repeated-measures outcomes
 ### Nick Seewald
 
-library(xtable)
-
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
   pval       <- c(list1$pval, list2$pval)
@@ -502,7 +500,6 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
 
 
 estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, pool.dtr = F) {
-  
   n <- length(unique(d$id))
   nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
@@ -519,36 +516,36 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
   
   if (pool.time & pool.dtr) {
-    numerator <- apply(subset(resids, select = grep("dtr", names(resids))), 2, sum)
-    denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gammas)
-    numerator / denominator
-  }
-  
-  sum(subset(resids, select = grep("dtr", names(resids)))) / (sum(subset(weightmat, select = grep("dtr", names(weightmat)))) - length(gammas))
-  
-  sigma2.t.dtr <- Reduce(function(...) merge(..., by = "time"), 
-                         lapply(1:nDTR, function(dtr) {
-                           x <- list(resids[[paste0("dtr", dtr)]])
-                           sumsqrs <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                by = list("time" = resids$time), sum)
-                           x <- list(weightmat[[paste0("dtr", dtr)]])
-                           sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                               by = list("time" = resids$time), sum)
-                           sumsqrs[, 2] <- sumsqrs[, 2] / sumwts[, 2]
-                           sumsqrs
-                         }))
-  
-  if (pool.time & pool.dtr) {
-    sum(sigma2.t.dtr) / (length(times) * sum(grepl("dtr", names(sigma2.t.dtr))))
+    numerator   <- sum(subset(resids, select = grep("dtr", names(resids))))
+    denominator <- (sum(subset(weightmat, select = grep("dtr", names(weightmat)))) - length(gammas))
   } else if (pool.time & !pool.dtr) {
-    matrix(apply(sigma2.t.dtr[, -1], 2, mean), nrow = 1, 
-           dimnames = list(NULL, sapply(1:nDTR, function(dtr) paste0('dtr', dtr))))
+    numerator   <- apply(subset(resids, select = grep("dtr", names(resids))), 2, sum)
+    denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gammas)
   } else if (!pool.time & pool.dtr) {
-    matrix(apply(sigma2.t.dtr[, -1], 1, mean), nrow = 1,
-           dimnames = list(NULL, times))
+      numerator <- do.call("c", lapply(times, function(x) {
+      sum(subset(resids, time == x, select = grep("dtr", names(resids))))
+    }))
+    denominator <- do.call("c", lapply(times, function(x) {
+      sum(subset(weightmat, time == x, select = grep("dtr", names(weightmat))))
+    }))
+    names(numerator) <- names(denominator) <- paste0("time", times)
   } else {
-    sigma2.t.dtr
+    numerator <- Reduce(function(...) merge(..., by = "time"),
+                           lapply(1:nDTR, function(dtr) {
+                             x <- list(resids[[paste0("dtr", dtr)]])
+                             sumsqrs <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                                  by = list("time" = resids$time), sum)
+                             x <- list(weightmat[[paste0("dtr", dtr)]])
+                             sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                                 by = list("time" = resids$time), sum)
+                             sumsqrs[, 2] <- sumsqrs[, 2] / sumwts[, 2]
+                             sumsqrs
+                           }))
+    rownames(numerator) <- numerator$time 
+    numerator <- as.matrix(numerator[, -1])
+    denominator <- 1
   }
+  numerator / denominator
 }
 
 
