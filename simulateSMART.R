@@ -39,6 +39,7 @@
 #' @param sigma.r1 
 #' @param sigma.r0 
 #' @param corstr 
+#' @param corstr.data Correlation structure to be used in the data generative model
 #' @param rho 
 #' @param rho.r1 
 #' @param rho.r0 
@@ -65,6 +66,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 uneqsdDTR = NULL, uneqsd = NULL, 
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
                 corstr = c("identity", "exchangeable", "ar1"),
+                corstr.data = corstr,
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
                 L = NULL, varmats = NULL,
                 constant.var.time = TRUE, constant.var.dtr = TRUE,
@@ -101,7 +103,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   # Compute conditional variances
   varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
-                               corstr = corstr,
+                               corstr = corstr.data,
                                sigma, sigma.r1, sigma.r0,
                                uneqsd = NULL, uneqsdDTR = NULL,
                                rho, rho.r1, rho.r0,
@@ -120,8 +122,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
                        
-                       d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0, corstr = corstr,
-                                          rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
+                       d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
+                                          corstr = corstr.data, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
                                           balanceRand = balanceRand, empirical = empirical)
                         if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
@@ -161,15 +163,15 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                            outcome.var <- varmat(sigma2.hat, 0, times, "exchangeable")
                            param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
                            iter <- 1
-                         } else if (corstr == "exchangeable" & rho != 0) {
-                           outcome.var <- varmat(sigma2.hat, rho.hat, times, "exchangeable")
+                         } else {
+                           outcome.var <- varmat(sigma2.hat, rho.hat, times, corstr)
                            param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
                            # Iterate until estimates of gammas and rho converge
                            for (i in 1:maxiter.solver) {
                              sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                            pool.time = constant.var.time, pool.dtr = constant.var.dtr)
                              rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exchangeable")
+                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, corstr)
                              param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
                              if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
                                  (rho.new - rho.hat)^2 <= tol) {

@@ -429,7 +429,6 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                          corstr = c("exchangeable", "ar1")) {
   corstr <- match.arg(corstr)
-  pooled <- match.arg(pooled)
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
   
   n <- length(unique(d$id))
@@ -464,6 +463,16 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   # Create matrix of weights per person-time per DTR
   weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
   
+  # Sum weights over individuals 
+  # (but only use one weight per person -- weightmat has duplicated rows: 1 per time)
+  sumweights <- apply(Reduce(function(...) merge(..., by = "time"), 
+                             lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
+                               x <- list(weightmat[[paste0("dtr", dtr)]])
+                               sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                                   by = list("time" = resids$time), sum)
+                             }))[, -1],
+                      2, unique)
+  
   if (corstr == "exchangeable") {
     # For every id and every dtr, compute (\sum_{s<t} r_{s} * r_{t} / sigma_{s} sigma_{t}
     r <- do.call(rbind,
@@ -476,6 +485,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                             }))
                           })
                         }))
+    denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
   } else if (corstr == "ar1") {
     r <- do.call(rbind,
                  lapply(split.data.frame(resids, resids$id),
@@ -487,6 +497,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                             }))
                           })
                         }))
+    denominator <- sumweights * (length(times) - 1) - length(gammas)
   }
   
   # Weight residual sums
@@ -494,20 +505,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   
   # Construct numerator for estimator of rho in exchangeable corstr
   numerator <- apply(r, 2, sum)
-  
-  # Sum weights over individuals 
-  # (but only use one weight per person -- weightmat has duplicated rows: 1 per time)
-  sumweights <- apply(Reduce(function(...) merge(..., by = "time"), 
-                             lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
-                               x <- list(weightmat[[paste0("dtr", dtr)]])
-                               sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                   by = list("time" = resids$time), sum)
-                             }))[, -1],
-                      2, unique)
-  
-  # Construct denominator for estimator of alpha in exchangeable corstr
-  denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
-  
+
   # Average over DTRs
   return(mean(numerator/denominator))
 }
@@ -933,7 +931,7 @@ validTrial <- function(d, design) {
 
 ### Construct V matrix 
 # NB: ONLY WORKS WHEN POOLING OVER DTRs RIGHT NOW!!
-varmat <- function(sigma2, alpha, times, corstr = c("identity", "exchangeable", "ar1")) {
+varmat <- function(sigma2, rho, times, corstr = c("identity", "exchangeable", "ar1")) {
   corstr <- match.arg(corstr)
   if (length(sigma2) != 1 & length(sigma2) != length(times)) {
     stop("sigma must be either length 1 (assuming constant variance over time) or have the same length as times.")
@@ -942,8 +940,5 @@ varmat <- function(sigma2, alpha, times, corstr = c("identity", "exchangeable", 
   }
   
   sigma2 <- as.vector(sigma2)
-  
-  if (corstr == "exchangeable") {
-    diag(sqrt(sigma2)) %*% cormat(alpha, length(times), corstr) %*% diag(sqrt(sigma2))
-  }
+  diag(sqrt(sigma2)) %*% cormat(rho, length(times), corstr) %*% diag(sqrt(sigma2))
 }
