@@ -185,7 +185,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                iter <- i
                              }
                            }
-                           param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
+                           param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr), times, spltime, design, gammas = param.hat)
                          }
                          
                          confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)

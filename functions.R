@@ -115,17 +115,13 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
   
   # Construct "base" correlation matrices for responders 
   # (these are the marginal correlation matrices and will be modified below)
-  if (corstr == "identity") {
-    cormat.r1 <- cormat.r0 <- diag(rep(1, length(times)))
-  } else if (corstr == "exchangeable") {
-    cormat.r1 <- cormat.r0 <- cormat.exch(rho, length(times))
-  } else if (corstr == "ar1") {
-    cormat.r1 <- cormat.r0 <- cormat.ar1(rho, length(times))
-  }
+  cormat.r1 <- cormat.r0 <- cormat(rho, length(times), corstr)
+  
   # Create responders' correlation matrices by looping over m and computing appropriate entries
-  for (i in 1:dim(m)[1]) {
-    cormat.r1[m[i, 1], m[i, 2]] <- rho.r1
-    cormat.r0[m[i, 1], m[i, 2]] <- rho.r0
+  for (i in 1:nrow(m)) {
+    dif <- abs(m[i, 1] - m[i, 2])
+    cormat.r1[m[i, 1], m[i, 2]] <- ifelse(corstr == "ar1", rho.r1^dif, rho.r1)
+    cormat.r0[m[i, 1], m[i, 2]] <- ifelse(corstr == "ar1", rho.r0^dif, rho.r0)
   }
   
   if (design == 1) {
@@ -193,11 +189,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
     assign("cormat.r01", cormat.r0, env = varEnv)
     
     for (a1ind in c(0, 1)) {
-      if (corstr %in% c("exchangeable", "identity")) {
-        x1 <- x2 <- x3 <- cormat.exch(rho, length(times))
-      } else if (corstr == "ar1") {
-        x1 <- x2 <- x3 <- cormat.ar1(rho, length(times))
-      }
+      x1 <- x2 <- x3 <- cormat(rho, length(times), corstr)
       for(i in 1:nrow(m)) {
         x1[m[i, 1], m[i, 2]] <- 
           generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1,
@@ -206,7 +198,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
                             sigma.t1.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.r", a1ind, 1), envir = varEnv)[m[i, 2]],
-                            rho = rho,
+                            rho = ifelse(corstr == "ar1", rho^abs(m[i, 1] - m[i, 2]), rho),
                             rho.ref = get(paste0("cormat.r", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
@@ -220,7 +212,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
                             sigma.t1.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.nr", a1ind, 1), envir = varEnv)[m[i, 2]],
-                            rho = rho,
+                            rho = ifelse(corstr == "ar1", rho^abs(m[i, 1] - m[i, 2]), rho),
                             rho.ref = get(paste0("cormat.nr", a1ind, 1), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
@@ -234,7 +226,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]], 
                             sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
-                            rho = rho,
+                            rho = ifelse(corstr == "ar1", rho^abs(m[i, 1] - m[i, 2]), rho),
                             rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
@@ -293,11 +285,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       a1ind <- NRgrid$a1ind[j]
       a2NRind <- NRgrid$a2NRind[j]
       
-      if (corstr %in% c("exchangeable", "identity")) {
-        x <- cormat.exch(rho, length(times))
-      } else if (corstr == "ar1") {
-        x <- cormat.ar1(rho, length(times))
-      }
+      x <- cormat(rho, length(times), corstr)
       
       for (i in 1:nrow(m)) {
         x[m[i, 1], m[i, 2]] <- 
@@ -307,7 +295,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
                             sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
-                            rho = rho,
+                            rho = ifelse(corstr == "ar1", rho^abs(m[i, 1] - m[i, 2]), rho),
                             rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
                             gammas = gammas, lambdas = lambdas)
       }
@@ -340,11 +328,18 @@ cormat.ar1 <- function(rho, t) {
   rho^(abs(row(m) - col(m)))
 }
 
-### Construct a t-by-t exchangeable correlation matrix with correlation rho
-cormat.exch <- function(rho, t) {
-  m <- matrix(rep(rho, t^2), nrow = t)
+### Construct a t-by-t correlation matrix
+cormat <- function(rho, t, corstr = c("identity", "exchangeable", "ar1")) {
+  corstr <- match.arg(corstr)
+  if (corstr == "identity") {
+    diag(rep(1, t))
+  } else if (corstr == "exchangeable") {
+    matrix(rep(rho, t^2), nrow = t)
   diag(m) <- rep(1,t)
-  m
+  } else if (corstr == "ar1") {
+    m <- diag(t)
+    rho^(abs(row(m) - col(m)))
+  }
 }
 
 dtrIndex <- function(design) {
@@ -431,19 +426,30 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
 }
 
-estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exchangeable") {
+estimate.rho <- function(d, times, spltime, design, sigma, gammas,
+                         corstr = c("exchangeable", "ar1")) {
+  corstr <- match.arg(corstr)
+  pooled <- match.arg(pooled)
+  if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
+  
   n <- length(unique(d$id))
   nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime, design)
   
-  if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
-  if (length(sigma) != length(times) & length(sigma) != 1)
-    stop("sigma must be length one OR a vector with the same length as times.")
+  sigma <- as.matrix(sigma)
   
-  # If a time-invariant sigma is provided, replicate it so there's one copy per time
-  if (length(sigma) == 1)
-    sigma <- rep(sigma, length(times))
+  # Restructure sigma to a length(times)-by-nDTR matrix
+  if (sum(rownames(sigma) == times) == length(times) & ncol(sigma) != nDTR) {
+    sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
+  } else if (sum(grepl("dtr", rownames(sigma))) != 0) {
+    sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times)))
+  } else if (nrow(sigma) == ncol(sigma) & ncol(sigma) == 1) {
+    sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = nDTR)
+  } 
+  
+  colnames(sigma) <- paste0("dtr", 1:nDTR)
+  rownames(sigma) <- times
   
   # Compute residuals (Y_{it} - mu_{t}(a1, a2))
   resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
@@ -454,48 +460,56 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas, corstr = "exc
   resids <- cbind("id" = d$id, "time" = d$time,
                   resids * d[, grep("dtr", names(d))])
   
+  weights <- aggregate(weight ~ id, d, unique)
+  # Create matrix of weights per person-time per DTR
+  weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
+  
   if (corstr == "exchangeable") {
-    # For every id and every dtr, compute (\sum_{s<t} r_{s} * r_{t} / sigma_{s} sigma_t()
+    # For every id and every dtr, compute (\sum_{s<t} r_{s} * r_{t} / sigma_{s} sigma_{t}
     r <- do.call(rbind,
                  lapply(split.data.frame(resids, resids$id),
-                        function(d) {
-                          sapply(1:sum(grepl("dtr", names(d))), function(dtr) {
-                            sum(sapply(2:length(d$time), function(t) {
-                              sum((d[t, paste0("dtr", dtr)] / sigma[t]) *
-                                    (d[1:(t - 1), paste0("dtr", dtr)] / sigma[1:(t - 1)]))
+                        function(subdat) {
+                          sapply(1:sum(grepl("dtr", names(subdat))), function(dtr) {
+                            sum(sapply(2:length(subdat$time), function(ti) {
+                              sum((subdat[ti, paste0("dtr", dtr)] / sigma[ti, dtr]) *
+                                    (subdat[1:(ti - 1), paste0("dtr", dtr)] / sigma[1:(ti - 1), dtr]))
                             }))
                           })
-                        })
-    )
-    
-    # Extract weights from data frame
-    weights <- aggregate(weight ~ id, d, unique)
-    
-    # Weight residual sums
-    r <- weights$weight * r
-    
-    # Construct numerator for estimator of rho in exchangeable corstr
-    numerator <- apply(r, 2, sum)
-    
-    # Create matrix of weights per person-time per DTR
-    weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
-    
-    # Sum weights over individuals 
-    # (but only use one weight per person -- weightmat has duplicated rows: 1 per time)
-    sumweights <- apply(Reduce(function(...) merge(..., by = "time"), 
-                               lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
-                                 x <- list(weightmat[[paste0("dtr", dtr)]])
-                                 sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                     by = list("time" = resids$time), sum)
-                               }))[, -1],
-                        2, unique)
-    
-    # Construct denominator for estimator of alpha in exchangeable corstr
-    denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
-    
-    # Average over DTRs
-    return(mean(numerator/denominator))
-  } else NULL
+                        }))
+  } else if (corstr == "ar1") {
+    r <- do.call(rbind,
+                 lapply(split.data.frame(resids, resids$id),
+                        function(subdat) {
+                          sapply(1:sum(grepl("dtr", names(subdat))), function(dtr) {
+                            sum(sapply(2:length(subdat$time), function(time) {
+                              sum((subdat[time, paste0("dtr", dtr)] / sigma[time, dtr]) *
+                                    (subdat[time - 1, paste0("dtr", dtr)] / sigma[time - 1, dtr]))
+                            }))
+                          })
+                        }))
+  }
+  
+  # Weight residual sums
+  r <- weights$weight * r
+  
+  # Construct numerator for estimator of rho in exchangeable corstr
+  numerator <- apply(r, 2, sum)
+  
+  # Sum weights over individuals 
+  # (but only use one weight per person -- weightmat has duplicated rows: 1 per time)
+  sumweights <- apply(Reduce(function(...) merge(..., by = "time"), 
+                             lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
+                               x <- list(weightmat[[paste0("dtr", dtr)]])
+                               sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                                   by = list("time" = resids$time), sum)
+                             }))[, -1],
+                      2, unique)
+  
+  # Construct denominator for estimator of alpha in exchangeable corstr
+  denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
+  
+  # Average over DTRs
+  return(mean(numerator/denominator))
 }
 
 
@@ -545,7 +559,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
     numerator <- as.matrix(numerator[, -1])
     denominator <- 1
   }
-  numerator / denominator
+  as.matrix(numerator / denominator)
 }
 
 
@@ -636,7 +650,8 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
   } else {
     if (design == 1) {
       if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
-      mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2R + gammas[7] * a2NR + gammas[8] * a1 * a2R + gammas[9] * a1 * a2NR
+      mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2R + gammas[7] * a2NR +
+        gammas[8] * a1 * a2R + gammas[9] * a1 * a2NR
     } else if (design == 2) {
       if (length(gammas) != 7) stop("for design 1 gammas must be length 7.")
       mu <- gammas[4] + gammas[5] * a1 + gammas[6] * a2NR + gammas[7] * a1 * a2NR
@@ -879,7 +894,7 @@ SMART.estimate <- function(data, corstr = c("identity", "exchangeable", "ar1"),
         iter <- i
       }
     }
-    param.var <- estimate.paramvar(d1, cormat.exch(rho.hat, length(times)), times, spltime, design, gammas = param.hat)
+    param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr), times, spltime, design, gammas = param.hat)
   }
   
   
@@ -929,6 +944,6 @@ varmat <- function(sigma2, alpha, times, corstr = c("identity", "exchangeable", 
   sigma2 <- as.vector(sigma2)
   
   if (corstr == "exchangeable") {
-    diag(sqrt(sigma2)) %*% cormat.exch(alpha, length(times)) %*% diag(sqrt(sigma2))
+    diag(sqrt(sigma2)) %*% cormat(alpha, length(times), corstr) %*% diag(sqrt(sigma2))
   }
 }
