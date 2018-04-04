@@ -89,6 +89,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   ## Handle correlation structure
   corstr <- match.arg(corstr)
+  corstr.data <- match.arg(corstr.data, choices = c("identity", "exchangeable", "ar1"))
   if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
   
   ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
@@ -151,7 +152,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                          sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                        pool.time = constant.var.time, pool.dtr = constant.var.dtr)
                          
-                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
+                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = corstr)
                          
                          # Compute variance matrices for all conditional cells
                          condVars <- lapply(split.SMART(d$data), function(x) {
@@ -219,9 +220,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
   
   postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""),
-                            "\ntrue corr structure = ",
-                            switch(corstr, "id" =, "identity" = "identity",
-                                   "exch" =, "exchangeable" = paste0("exchangeable(", rho, ")")),
+                            "\ntrue corr structure = ", corstr, "(", rho, ")",
                             "\nr0 = ", r0, ", r1 = ", r1,
                             "\neffect size = ", delta,
                             "\nn = ", n,
