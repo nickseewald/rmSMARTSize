@@ -334,8 +334,9 @@ cormat <- function(rho, t, corstr = c("identity", "exchangeable", "ar1")) {
   if (corstr == "identity") {
     diag(rep(1, t))
   } else if (corstr == "exchangeable") {
-    matrix(rep(rho, t^2), nrow = t)
-  diag(m) <- rep(1,t)
+    m <- matrix(rep(rho, t^2), nrow = t)
+    diag(m) <- rep(1,t)
+    m
   } else if (corstr == "ar1") {
     m <- diag(t)
     rho^(abs(row(m) - col(m)))
@@ -445,7 +446,9 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
     sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times)))
   } else if (nrow(sigma) == ncol(sigma) & ncol(sigma) == 1) {
     sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = nDTR)
-  } 
+  } else if (nrow(sigma) == length(times) & ncol(sigma) == 1) {
+    sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
+  }
   
   colnames(sigma) <- paste0("dtr", 1:nDTR)
   rownames(sigma) <- times
