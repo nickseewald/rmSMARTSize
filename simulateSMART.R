@@ -121,7 +121,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
              niter, " iterations.\n",
              "********************\n"))
   results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
-                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE, .inorder = FALSE) %dorng% { 
+                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE,
+                     .packages = "MASS", .inorder = FALSE) %dorng% { 
                        
                        d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
                                           corstr = corstr.data, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
