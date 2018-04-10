@@ -774,6 +774,7 @@ resultTable <- function(results) {
     data.frame("delta" = l$delta,
                "rprob" = min(l$r0, l$r1),
                "rho" = l$rho,
+               "rho.size" = ifelse(is.null(l$rho.size), l$rho, l$rho.size),
                "sharp" = ifelse(l$sharp, "sharp", "cons."),
                "n" = l$n,
                "estPwr" = l$power,
@@ -789,10 +790,11 @@ resultTable <- function(results) {
   }))
   
   colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}\\right\\}$", "$\\rho$",
+                   "$\\rho_{\\text{size}}$",
                    "Formula", "$n$", "$1-\\hat{\\beta}$", "$p$ value", "Coverage",
                    "$p$ value", "Num. Runs", "Valid Runs")
   
-  print(xtable(d, digits = c(1,1,1,1,1,0,3,3,3,3,0,0)),
+  print(xtable(d, digits = c(1,1,1,1,1,1,0,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,
         include.rownames = F,
         include.colnames = T)
