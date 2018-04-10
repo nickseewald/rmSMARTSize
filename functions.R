@@ -5,7 +5,8 @@
 combine.results <- function(list1, list2) {
   pval       <- c(list1$pval, list2$pval)
   param.hat  <- rbind(list1$param.hat, list2$param.hat)
-  sigma2.hat <- rbind(list1$sigma2.hat, list2$sigma2.hat)
+  sigma2.hat <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                       list(list1$sigma2.hat, list2$sigma2.hat))
   param.var  <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                        list(list1$param.var, list2$param.var))
   rho.hat    <- c(list1$rho.hat, list2$rho.hat)
@@ -568,7 +569,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
 # combining everything
 finalize.results <- function(x) {
   param.hat     <- apply(as.matrix(x$param.hat), 2, mean, na.rm = T)
-  sigma2.hat    <- apply(as.matrix(x$sigma2.hat), 2, mean, na.rm = T)
+  sigma2.hat    <- x$sigma2.hat / x$valid
   param.var     <- x$param.var / x$valid
   param.var.est <- apply(as.matrix(x$param.hat), 2, var, na.rm = T)
   rho.hat       <- mean(x$rho.hat, na.rm = T)
