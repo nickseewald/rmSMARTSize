@@ -38,8 +38,7 @@
 #' @param sigma 
 #' @param sigma.r1 
 #' @param sigma.r0 
-#' @param corstr 
-#' @param corstr.data Correlation structure to be used in the data generative model
+#' @param corstr Correlation structure to be used in the data generative model
 #' @param rho 
 #' @param rho.r1 
 #' @param rho.r0 
@@ -66,8 +65,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 uneqsdDTR = NULL, uneqsd = NULL, 
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
                 corstr = c("identity", "exchangeable", "ar1"),
-                corstr.data = corstr,
-                rho = NULL, rho.r1 = rho, rho.r0 = rho,
+                rho = NULL, rho.r1 = rho, rho.r0 = rho, rho.size = rho,
                 L = NULL, varmats = NULL,
                 pool.time = TRUE, pool.dtr = TRUE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
@@ -89,8 +87,10 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   ## Handle correlation structure
   corstr <- match.arg(corstr)
-  corstr.data <- match.arg(corstr.data, choices = c("identity", "exchangeable", "ar1"))
-  if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
+  if (corstr == "identity") {
+    rho <- rho.r1 <- rho.r0 <- 0
+    if (is.null(rho.size)) rho.size <- rho
+  }
   
   ## If design == 1, pool.dtr is impossible to satisfy in a generative model. Set it to false.'
   # if (design == 1) pool.dtr <- FALSE
@@ -98,13 +98,13 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
     n <- sample.size(delta = delta, r = ifelse(is.null(r), min(r0, r1), r),
-                     rho = rho, alpha = alpha, power = power,
+                     rho = rho.size, alpha = alpha, power = power,
                      design = design, round = round,
                      conservative = conservative)
   
   # Compute conditional variances
   varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
-                               corstr = corstr.data,
+                               corstr = corstr,
                                sigma, sigma.r1, sigma.r0,
                                uneqsd = NULL, uneqsdDTR = NULL,
                                rho, rho.r1, rho.r0,
@@ -114,7 +114,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   message(paste0("********************\n",
                  "Starting simulation!\n",
                  "delta = ", delta, "\n",
-                 "corstr = exch(", rho, ")\n",
+                 "true corstr = ", corstr, "(", rho, ")\n",
+                 "sized for exchangeable(", rho.size, ")\n",
                  "r0 = ", r0, ", r1 = ", r1, "\n",
                  ifelse(is.null(postIdentifier), NULL, postIdentifier),
                  "\nn = ", n, "\n",
@@ -126,7 +127,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      .packages = "MASS", .inorder = FALSE) %dorng% { 
                        
                        d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
-                                          corstr = corstr.data, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
+                                          corstr = corstr, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
                                           balanceRand = balanceRand, empirical = empirical)
                         if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
@@ -154,7 +155,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                          sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                        pool.time = pool.time, pool.dtr = pool.dtr)
                          
-                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = corstr)
+                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
                          
                          # Compute variance matrices for all conditional cells
                          condVars <- lapply(split.SMART(d$data), function(x) {
@@ -162,36 +163,31 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                          })
                          
                          # Iterate parameter estimation
-                         if (corstr == "identity" | (corstr == "exchangeable" & rho == 0)) {
-                           outcome.var <- varmat(sigma2.hat, 0, times, "exchangeable")
-                           param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
-                           iter <- 1
-                         } else {
-                           outcome.var <- varmat(sigma2.hat, rho.hat, times, corstr)
-                           param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
-                           # Iterate until estimates of gammas and rho converge
-                           for (i in 1:maxiter.solver) {
-                             sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                           pool.time = pool.time, pool.dtr = pool.dtr)
-                             rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-                             outcomeVar.new <- varmat(sigma2.new, rho.new, times, corstr)
-                             param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
-                             if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
-                                 (rho.new - rho.hat)^2 <= tol) {
-                               param.hat <- param.new
-                               sigma2.hat <- sigma2.new
-                               rho.hat <- rho.new
-                               iter <- i
-                               break
-                             } else {
-                               param.hat <- param.new
-                               sigma2.hat <- sigma2.new
-                               rho.hat <- rho.new
-                               iter <- i
-                             }
+                         outcome.var <- varmat(sigma2.hat, rho.hat, times, corstr = "exchangeable")
+                         param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
+                         # Iterate until estimates of gammas and rho converge
+                         for (i in 1:maxiter.solver) {
+                           sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
+                                                         pool.time = pool.time, pool.dtr = pool.dtr)
+                           rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
+                           outcomeVar.new <- varmat(sigma2.new, rho.new, times, corstr = "exchangeable")
+                           param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
+                           if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
+                               (rho.new - rho.hat)^2 <= tol) {
+                             param.hat <- param.new
+                             sigma2.hat <- sigma2.new
+                             rho.hat <- rho.new
+                             iter <- i
+                             break
+                           } else {
+                             param.hat <- param.new
+                             sigma2.hat <- sigma2.new
+                             rho.hat <- rho.new
+                             iter <- i
                            }
-                           param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr), times, spltime, design, gammas = param.hat)
                          }
+                         param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr = "exchangeable"),
+                                                        times, spltime, design, gammas = param.hat)
                          
                          confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)
                          confUB <- L %*% param.hat + sqrt(L %*% param.var %*% L) * qnorm(.975)
