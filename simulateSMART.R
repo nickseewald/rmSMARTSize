@@ -44,8 +44,8 @@
 #' @param rho.r1 
 #' @param rho.r0 
 #' @param L 
-#' @param constant.var.time 
-#' @param constant.var.dtr 
+#' @param pool.time 
+#' @param pool.dtr 
 #' @param niter 
 #' @param tol 
 #' @param maxiter.solver 
@@ -69,7 +69,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 corstr.data = corstr,
                 rho = NULL, rho.r1 = rho, rho.r0 = rho,
                 L = NULL, varmats = NULL,
-                constant.var.time = TRUE, constant.var.dtr = TRUE,
+                pool.time = TRUE, pool.dtr = TRUE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                 save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
                 notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
@@ -92,8 +92,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   corstr.data <- match.arg(corstr.data, choices = c("identity", "exchangeable", "ar1"))
   if (corstr == "identity") rho <- rho.r1 <- rho.r0 <- 0
   
-  ## If design == 1, constant.var.dtr is impossible to satisfy in a generative model. Set it to false.'
-  # if (design == 1) constant.var.dtr <- FALSE
+  ## If design == 1, pool.dtr is impossible to satisfy in a generative model. Set it to false.'
+  # if (design == 1) pool.dtr <- FALSE
   
   # If n is not provided, compute it from the other inputs
   if (is.null(n)) 
@@ -111,17 +111,18 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                gammas, lambdas)
   
   ## Simulate
-  cat(paste0("********************\n",
-             "Starting simulation!\n",
-             "delta = ", delta, "\n",
-             "corstr = exch(", rho, ")\n",
-             "r0 = ", r0, ", r1 = ", r1, "\n",
-             ifelse(is.null(postIdentifier), NULL, postIdentifier),
-             "\nn = ", n, "\n",
-             niter, " iterations.\n",
-             "********************\n"))
+  message(paste0("********************\n",
+                 "Starting simulation!\n",
+                 "delta = ", delta, "\n",
+                 "corstr = exch(", rho, ")\n",
+                 "r0 = ", r0, ", r1 = ", r1, "\n",
+                 ifelse(is.null(postIdentifier), NULL, postIdentifier),
+                 "\nn = ", n, "\n",
+                 niter, " iterations.\n",
+                 "********************\n"))
   results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
                      .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE,
+                     # .export = ls(), 
                      .packages = "MASS", .inorder = FALSE) %dorng% { 
                        
                        d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
@@ -130,12 +131,12 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                         if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
                                         "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
-                                        "sigma2.hat" = matrix(ncol = (length(times) * (1 - constant.var.time) * constant.var.dtr) +
-                                                                4 * (1 - constant.var.dtr) +
-                                                                (constant.var.time * constant.var.dtr),
-                                                              nrow = (length(times) * (1 - constant.var.dtr) +
-                                                                        (4 * (1 - constant.var.dtr) * constant.var.time) +
-                                                                        (constant.var.time * constant.var.dtr))),
+                                        "sigma2.hat" = matrix(ncol = (length(times) * (1 - pool.time) * pool.dtr) +
+                                                                4 * (1 - pool.dtr) +
+                                                                (pool.time * pool.dtr),
+                                                              nrow = (length(times) * (1 - pool.dtr) +
+                                                                        (4 * (1 - pool.dtr) * pool.time) +
+                                                                        (pool.time * pool.dtr))),
                                         "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
                                         "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
                                         "alpha" = alpha, "power.target" = power)
@@ -151,7 +152,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                          param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
                          
                          sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                       pool.time = constant.var.time, pool.dtr = constant.var.dtr)
+                                                       pool.time = pool.time, pool.dtr = pool.dtr)
                          
                          rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = corstr)
                          
@@ -171,7 +172,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                            # Iterate until estimates of gammas and rho converge
                            for (i in 1:maxiter.solver) {
                              sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                           pool.time = constant.var.time, pool.dtr = constant.var.dtr)
+                                                           pool.time = pool.time, pool.dtr = pool.dtr)
                              rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
                              outcomeVar.new <- varmat(sigma2.new, rho.new, times, corstr)
                              param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
