@@ -769,8 +769,16 @@ print.simResult <- function(sim) {
 #' @export
 #'
 #' @examples
-resultTable <- function(results) {
+resultTable <- function(results, alternative = c("two.sided", "less", "greater")) {
+  alternative <- match.arg(alternative)
+  
   d <- do.call("rbind", lapply(results, function(l) {
+    if (alternative == "two.sided") {
+      pval.power <- l$pval.power
+    } else {
+      pval.power <- binom.test(x = sum(l$pval <= l$alpha / 2, na.rm = T) + sum(l$pval >= 1 - l$alpha / 2, na.rm = T),
+                               n = l$valid, p = l$power.target, alternative = alternative)$p.value
+    }
     data.frame("delta" = l$delta,
                "rprob" = min(l$r0, l$r1),
                "rho" = l$rho,
@@ -778,7 +786,7 @@ resultTable <- function(results) {
                "sharp" = ifelse(l$sharp, "sharp", "cons."),
                "n" = l$n,
                "estPwr" = l$power,
-               "pval.power" = l$pval.power,
+               "pval.power" = pval.power,
                "coverage" = l$coverage,
                "pval.coverage" = tryCatch(binom.test(x = l$coverage * l$valid,
                                             n = l$valid, p = .95, 
