@@ -1,5 +1,10 @@
+if(!is.loaded("mpi_initialize")) {
+  library(Rmpi)
+}
+
 library(MASS)
 library(doParallel)
+library(doMPI)
 library(doRNG)
 library(slackr)
 library(xtable)
@@ -13,11 +18,9 @@ source(paste0(wd, "/simulateSMART.R"))
 slackrSetup(config_file = paste0(wd, "/d3slack.dcf"))
 
 ### CLUSTER SETUP ###
-nodefile <- Sys.getenv("PBS_NODEFILE")
 # Check for Flux and create cluster appropriately
-if (nodefile != "") {
-  hostlist <- read.table(nodefile, skip = 1, header = FALSE)
-  clus <- makeCluster(c(as.character(hostlist$V1)))
+if (Sys.info()["sysname"] != "Windows"){
+  clus <- startMPIcluster()
 } else {
   ncore <- detectCores()
   clus <- makeCluster(ncore)
@@ -25,16 +28,28 @@ if (nodefile != "") {
 
 # Set up cluster for parallel computation
 
-clusterExport(clus, varlist = "wd")
-clusterEvalQ(clus, {
-  library(MASS)
-  library(doParallel)
-  library(doRNG)
-  library(slackr)
-  library(xtable)
-  
-  source(paste0(wd, "/functions.R"), echo = F)
-  source(paste0(wd, "/generateSMART.R"), echo = F)
-  source(paste0(wd, "/simulateSMART.R"), echo = F)
-})
-registerDoParallel(clus)
+# clusterExport(clus, varlist = "wd")
+# clusterEvalQ(clus, {
+#   library(MASS)
+#   library(doParallel)
+#   library(doRNG)
+#   library(slackr)
+#   library(xtable)
+#   
+#   source(paste0(wd, "/functions.R"), echo = F)
+#   source(paste0(wd, "/generateSMART.R"), echo = F)
+#   source(paste0(wd, "/simulateSMART.R"), echo = F)
+# })
+
+if (Sys.info()["sysname"] != "Windows"){
+  registerDoMPI(clus)
+} else {
+  registerDoParallel(clus)
+}
+
+if (Sys.info()["sysname"] != "Windows"){
+  nWorkers <- clus$workerCount
+} else {
+  nWorkers <- length(clus)
+}
+
