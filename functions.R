@@ -88,13 +88,14 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
     dtrs <- dtrIndex(design)
     dtrMatrix <- do.call(cbind, dtrs)
   
-  if (length(sigma) == 1) {
-    sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = length(times))
-  } else if (length(sigma) == length(times)) {
-    sigma <- matrix(rep(sigma, nDTR), nrow = nDTR, byrow = T)
-  } else if (length(sigma) != length(times) & length(sigma) != nDTR * length(times)) {
-    stop("sigma must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
-  }
+    if (length(sigma) == 1) {
+      sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = length(times))
+    } else if (length(sigma) == length(times)) {
+      sigma <- matrix(rep(sigma, nDTR), nrow = nDTR, byrow = T)
+    } else if (length(sigma) != length(times) & length(sigma) != nDTR * length(times)) {
+      stop("sigma must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
+    }
+    
   ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
   ## (i.e., more than one measurement after re-randomization)
   if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
@@ -452,27 +453,39 @@ esteqn.compute <- function(d, V, times, spltime, design, gammas) {
 }
 
 esteqn.jacobian <- function(d, V, times, spltime, design) {
-  
   nDTR <- switch(design, 8, 4, 3)
   deriv <- mod.derivs(times, spltime, design)
+  
+  if (!is.list(V) | (is.list(V) & length(V) == 1)) {
+    V <- lapply(1:nDTR, function(i) V)
+  } else if (length(V) != nDTR) {
+    stop(paste("V must be a single matrix or a list of", nDTR, "matrices."))
+  }
   
   Reduce("+", lapply(split.data.frame(d, d$id), function(x) {
     Reduce("+", lapply(1:nDTR, function(dtr) {
       unique(x[[paste0("dtr", dtr)]]) * unique(x$weight) *
-        t(deriv[[dtr]]) %*% solve(V) %*% deriv[[dtr]]
+        t(deriv[[dtr]]) %*% solve(V[[dtr]]) %*% deriv[[dtr]]
     }))
   })) / -length(unique(d$id))
 }
 
-  estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
+estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
+  nDTR <- switch(design, 8, 4, 3)
+  
+  if (!is.list(V) | (is.list(V) & length(V) == 1)) {
+    V <- lapply(1:nDTR, function(i) V)
+  } else if (length(V) != nDTR)
+    stop(paste("V must be a single matrix or a list of", nDTR, "matrices."))
+  
   params.hat <- start
   j <- 0
   epsilon <- 10
   J <- esteqn.jacobian(d, V, times, spltime, design)
   
   for (j in 1:maxiter.solver) {
-    params.hat.new <- params.hat - solve(J) %*%
-      esteqn.compute(d, V, times, spltime, design, gammas = params.hat)
+    params.hat.new <-
+      params.hat - solve(J) %*% esteqn.compute(d, V, times, spltime, design, gammas = params.hat)
     epsilon <- norm(params.hat.new - params.hat, type = "F")
     params.hat <- params.hat.new
     if (epsilon <= tol) break
@@ -481,6 +494,13 @@ esteqn.jacobian <- function(d, V, times, spltime, design) {
 }
 
 estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
+  nDTR <- switch(design, 8, 4, 3)
+  
+  if (!is.list(V) | (is.list(V) & length(V) == 1)) {
+    V <- lapply(1:nDTR, function(i) V)
+  } else if (length(V) != nDTR)
+    stop(paste("V must be a single matrix or a list of", nDTR, "matrices."))
+  
   n <- length(unique(d$id))
   J <- esteqn.jacobian(d, V, times, spltime, design)
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
@@ -488,6 +508,8 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                          corstr = c("exchangeable", "ar1")) {
+  ## FIXME: Allow for different rhos across DTRs
+  
   corstr <- match.arg(corstr)
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
   
@@ -735,11 +757,15 @@ meanvec <- function(times, spltime, design, gammas) {
 
 meat.compute <- function(d, V, times, spltime, design, gammas) {
   # d should be LONG
-  
   n <- length(unique(d$id))
   nDTR <- switch(design, 8, 4, 3)
   mvec <- meanvec(times, spltime, design, gammas)
   dmat <- mod.derivs(times, spltime, design)
+  
+  if (!is.list(V) | (is.list(V) & length(V) == 1)) {
+    V <- lapply(1:nDTR, function(i) V)
+  } else if (length(V) != nDTR)
+    stop(paste("V must be a single matrix or a list of", nDTR, "matrices."))
   
   resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
     matrix(rep(t(mvec), n), ncol = ncol(mvec), byrow = TRUE)
@@ -753,7 +779,7 @@ meat.compute <- function(d, V, times, spltime, design, gammas) {
     # (obs$Y - meanvec(times, spltime, design, gammas))
     # Sum over DTRs
     m <- Reduce("+", lapply(1:nDTR, function(dtr) {
-      t(dmat[[dtr]]) %*% solve(V) %*% as.matrix(obs[[paste0("dtr", dtr)]], ncol = 1)
+      t(dmat[[dtr]]) %*% solve(V[[dtr]]) %*% as.matrix(obs[[paste0("dtr", dtr)]], ncol = 1)
     }))
     m %*% t(m)
   })) / n
@@ -869,7 +895,7 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
 sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
                         design = 2, round = "up", conservative = TRUE) {
   # Input checks
-  if (!(round %in% c("up", "down"))) stop("round must be either up or down")
+  if (!is.null(round) & !(round %in% c("up", "down"))) stop("round must be either up or down")
   nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
   correction <- 1 - rho^2
   if (design == 1) {
@@ -937,18 +963,18 @@ SMART.estimate <- function(data, corstr = c("identity", "exchangeable", "ar1"),
   
   # Iterate parameter estimation
   if (corstr == "identity" | (corstr == "exchangeable" & rho == 0)) {
-    outcome.var <- varmat(sigma2.hat, 0, times, "exch")
+    outcome.var <- varmat(sigma2.hat, 0, times, design, "exch")
     param.var <- estimate.paramvar(d1, diag(rep(1, length(times))), times, spltime, design, gammas = param.hat)
     iter <- 1
   } else if (corstr == "exchangeable" & rho != 0) {
-    outcome.var <- varmat(sigma2.hat, rho.hat, times, "exch")
+    outcome.var <- varmat(sigma2.hat, rho.hat, times, design, "exch")
     param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
     # Iterate until estimates of gammas and rho converge
     for (i in 1:maxiter.solver) {
       sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                     pool.time = constant.var.time, pool.dtr = constant.var.dtr)
       rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat)
-      outcomeVar.new <- varmat(sigma2.new, rho.new, times, "exch")
+      outcomeVar.new <- varmat(sigma2.new, rho.new, times, design, "exch")
       param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
       if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
           (rho.new - rho.hat)^2 <= tol) {
@@ -1002,15 +1028,20 @@ validTrial <- function(d, design) {
 }
 
 ### Construct V matrix 
-# NB: ONLY WORKS WHEN POOLING OVER DTRs RIGHT NOW!!
-varmat <- function(sigma2, rho, times, corstr = c("identity", "exchangeable", "ar1")) {
+varmat <- function(sigma2, rho, times, design, corstr = c("identity", "exchangeable", "ar1")) {
+  nDTR <- switch(design, 8, 4, 3)
   corstr <- match.arg(corstr)
-  if (length(sigma2) != 1 & length(sigma2) != length(times)) {
-    stop("sigma must be either length 1 (assuming constant variance over time) or have the same length as times.")
-  } else if (length(sigma2) == 1) {
-    sigma2 <- rep(sigma2, length(times))
+  
+  ## FIXME: accomodate for pooling over time but not DTR (maybe? this is an impossible scenario, but...)
+  if (length(sigma2) == 1) {
+    sigma2 <- matrix(rep(sigma2, nDTR * length(times)), ncol = length(times))
+  } else if (length(sigma2) == length(times)) {
+    sigma2 <- matrix(rep(sigma2, nDTR), ncol = nDTR, byrow = F)
+  } else if (length(sigma2) != length(times) & length(sigma2) != nDTR * length(times)) {
+    stop("sigma2 must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
   }
   
-  sigma2 <- as.vector(sigma2)
-  diag(sqrt(sigma2)) %*% cormat(rho, length(times), corstr) %*% diag(sqrt(sigma2))
+  lapply(1:nDTR, function(dtr) {
+    diag(sqrt(sigma2[, dtr])) %*% cormat(rho, length(times),corstr) %*% diag(sqrt(sigma2[, dtr]))
+  })
 }

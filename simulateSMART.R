@@ -163,14 +163,14 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                          })
                          
                          # Iterate parameter estimation
-                         outcome.var <- varmat(sigma2.hat, rho.hat, times, corstr = "exchangeable")
+                         outcome.var <- varmat(sigma2.hat, rho.hat, times, design, corstr = "exchangeable")
                          param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
                          # Iterate until estimates of gammas and rho converge
                          for (i in 1:maxiter.solver) {
                            sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                                          pool.time = pool.time, pool.dtr = pool.dtr)
                            rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
-                           outcomeVar.new <- varmat(sigma2.new, rho.new, times, corstr = "exchangeable")
+                           outcomeVar.new <- varmat(sigma2.new, rho.new, times, design, corstr = "exchangeable")
                            param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
                            if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
                                (rho.new - rho.hat)^2 <= tol) {
