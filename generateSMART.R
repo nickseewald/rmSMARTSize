@@ -25,9 +25,10 @@
 #'
 #' @examples
 generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, balanceRand = FALSE,
-                           sigma, sigma.r1, sigma.r0, corstr = c("identity", "exchangeable", "ar1"),
-                           uneqsdDTR = NULL, uneqsd = NULL, varmats = NULL,
-                           rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
+                          sigma, sigma.r1, sigma.r0, corstr = c("identity", "exchangeable", "ar1"),
+                          uneqsdDTR = NULL, uneqsd = NULL, varmats = NULL,
+                          respModel = NULL,
+                          rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
   
   # times:    Vector of times at which measurements are collected (currently limited to length three)
   # spltime:  Time (contained in times) at which re-randomization occurs
@@ -69,8 +70,15 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
   } else {
     d$A1 <- 2 * rbinom(n, 1, 0.5) - 1
   }
-  d$R[d$A1 ==  1] <- rbinom(sum(d$A1 == 1), 1, r1)
-  d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
+  
+  # if (!is.null(respModel)) {
+  #   if (length(respModel) != 3)
+  #     stop("If providing a respModel model for response, it must be a vector of length 3.")
+  #   respEst <- respModel[1] + respModel[2] * d$Y0
+  # } else {
+    d$R[d$A1 ==  1] <- rbinom(sum(d$A1 == 1), 1, r1)
+    d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
+  # }
   
   if (design == 1) {
     if (balanceRand) {
@@ -118,8 +126,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
     
     d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-    d$dtr1 <- as.numeric(with(d, (A1 == -1)))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1)))
   }
   
   ## Check validity of treatment allocations
@@ -143,6 +151,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
   d <- d[order(d$id), ]
   rownames(d) <- d$id
   
+  ## Compute variance matrices if not already provided
   if (is.null(varmats)) {
     varmats <- conditionalVarmat(times, spltime, design, r1, r0,
                                  corstr, sigma, sigma.r1, sigma.r0,
@@ -151,6 +160,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
                                  gammas, lambdas)
   }
   
+  ## Add noise with variance according to varmats
   d <- do.call("rbind",
                lapply(split.SMART(d), function(x) {
                  varIndex <- as.character(paste(unique(x$A1), unique(x$R), 
