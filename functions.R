@@ -50,24 +50,24 @@ conditionalIndex <- function(design) {
 
 ### Compute conditional mean Y at a particular time for a particular cell,
 ### per the specified model
-conditional.model <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
-  if (t <= spltime) {
-    mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
+conditional.model <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas) {
+  if (obsTime <= spltime) {
+    mu <- gammas[1] + obsTime * (gammas[2] + gammas[3] * a1)
   } else {
     if (design == 1) {
       if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
-      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + r * (gammas[6] * a2R + gammas[8] * a1 * a2R) / rprob + 
+      mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + r * (gammas[6] * a2R + gammas[8] * a1 * a2R) / rprob + 
                                (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
                                (r - rprob) * (lambdas[1] + lambdas[2] * a1))
     } else if (design == 2) {
       if (length(gammas) != 7) stop("for design 2, gammas must be length 7.")
-      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
-        (t - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
-        (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
+      mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
+        (obsTime - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
+        (obsTime - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
     } else if (design == 3) {
       if (length(gammas) != 6) stop("for design 3, gammas must be length 6.")
-      mu <- (t - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR * (1 - r) / (1 - rprob)) +
-        (t - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
+      mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR * (1 - r) / (1 - rprob)) +
+        (obsTime - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
     }
     mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + mu
   }
@@ -81,10 +81,19 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                               rho, rho.r1, rho.r0,
                               gammas, lambdas) {
   
+    nDTR <- switch(design, 8, 4, 3)
+    varEnv <- new.env()
+    corstr <- match.arg(corstr)
+    A <- conditionalIndex(design)
+    dtrs <- dtrIndex(design)
+    dtrMatrix <- do.call(cbind, dtrs)
+  
   if (length(sigma) == 1) {
-    sigma <- rep(sigma, length(times))
-  } else if (length(sigma) != length(times)) {
-    stop("sigma must either be length-1 or the same length as times.")
+    sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = length(times))
+  } else if (length(sigma) == length(times)) {
+    sigma <- matrix(rep(sigma, nDTR), nrow = nDTR, byrow = T)
+  } else if (length(sigma) != length(times) & length(sigma) != nDTR * length(times)) {
+    stop("sigma must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
   }
   ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
   ## (i.e., more than one measurement after re-randomization)
@@ -100,10 +109,6 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
   if (length(sigma.r0) != length(times)) {
     sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
   }
-  
-  varEnv <- new.env()
-  corstr <- match.arg(corstr)
-  A <- conditionalIndex(design)
   
   # Construct a matrix of (X,Y) coordinates which need to be adjusted in the conditional cor matrices
   # i.e., identify which cells of the conditional cor matrix correspond to correlations between the 
@@ -136,8 +141,8 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       )
       # Compute the standard deviation for times after spltime in the DTR with unequal variance
       uneqsd <- lapply(uneqsdDTR, function(dtr) {
-        sapply(times, function(t) {
-          generate.sd(sigma[which(times == t)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], t = t, spltime = spltime, 
+        sapply(times, function(obsTime) {
+          generate.sd(sigma[which(times == obsTime)], a1 = dtr[1], a2R = dtr[2], a2NR = dtr[3], obsTime = obsTime, spltime = spltime, 
                       design, rprob = get(paste0("r", (dtr[1] + 1) / 2)), gammas, lambdas)
         })
       })
@@ -150,7 +155,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       # Use DTR (a1ind, 1, 1) to 
       assign(paste0("sigma.nr", a1ind, "1"),
              sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1, t = times[i], spltime = spltime,
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = 1, a2NR = 1, obsTime = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
                                 sigma = ifelse(!is.null(uneqsdDTR), 
                                                ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, 1, 1)) == 3)) > 0,
@@ -162,7 +167,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
              }), envir = varEnv)
       assign(paste0("sigma.r", a1ind, "0"),
              sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, t = times[i], spltime = spltime,
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 1, a2R = -1, a2NR = 1, obsTime = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
                                 sigma = ifelse(!is.null(uneqsdDTR),
                                                ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, 1)) == 3)) > 0,
@@ -174,7 +179,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
              }), envir = varEnv)
       assign(paste0("sigma.nr", a1ind, "0"),
              sapply(1:length(times), function(i) {
-               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, t = times[i], spltime = spltime,
+               generate.cond.sd(a1 = 2 * a1ind - 1, r = 0, a2R = -1, a2NR = -1, obsTime = times[i], spltime = spltime,
                                 design = 1, rprob = get(paste0("r", a1ind)),
                                 sigma = ifelse(!is.null(uneqsdDTR),
                                                ifelse(sum(sapply(uneqsdDTR, function(dtr) sum(dtr == c(2 * a1ind - 1, -1, -1)) == 3)) > 0,
@@ -240,10 +245,9 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
     assign("cormat.r10", cormat.r1, env = varEnv)
     assign("cormat.r00", cormat.r0, env = varEnv)
     
-    dtrs <- dtrIndex(2)
     if ((!is.null(uneqsdDTR) & is.null(uneqsd)) | (is.null(uneqsdDTR) & !is.null(uneqsd)))
       stop("For design 2, you must provide either both uneqsdDTR and uneqsd or neither.")
-    invisible(sapply(1:4, function(i) {
+    invisible(sapply(1:nDTR, function(i) {
       if (!is.null(uneqsdDTR)) {
         # Check if the current embedded DTR (x) is in uneqsdDTR; if it is, store the index
         # (If it's not, uneqsdDTRindex has length 0)
@@ -265,22 +269,81 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
         }
       } else {
         # If no uneqsdDTR, use the common SD
-        sigmaStar <- sigma
+        sigmaStar <- sigma[i, ]
       }
       
       # Generate conditional SDs for non-responders and assign them to appropriate variables.
       assign(paste0("sigma.nr", (dtrs$a1[i] + 1) / 2, (dtrs$a2NR[i] + 1) / 2),
              unname(sapply(1:length(times), function(j) {
+               # Generate conditional standard deviation for non-responders
                generate.cond.sd(a1 = dtrs$a1[i], r = 0, a2R = dtrs$a2R[i], a2NR = dtrs$a2NR[i],
-                                t = times[j], spltime, design = 2, 
-                                rprob = get(paste0("r", (dtrs$a1[j] + 1) / 2)),
+                                obsTime = times[j], spltime, design = 2, 
+                                rprob = get(paste0("r", (dtrs$a1[i] + 1) / 2)),
                                 sigma = sigmaStar[j],
+                                sigma.cond = get(paste0("sigma.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[j],
+                                gammas = gammas, lambdas = lambdas)
+             })), envir = varEnv)
+      
+      x <- cormat(rho, length(times), corstr)
+      
+      for (k in 1:nrow(m)) {
+        x[m[k, 1], m[k, 2]] <- 
+          generate.cond.cor(a1 = dtrs$a1[i], r = 0, a2R = dtrs$a2R[i], a2NR = dtrs$a2NR[i],
+                            t1 = times[m[k, 1]], t2 = times[m[k, 2]], spltime = spltime,
+                            design = 2, rprob = get(paste0("r", (dtrs$a1[i] + 1) / 2)),
+                            sigma.t1 = sigmaStar[m[k, 1]], sigma.t2 = sigmaStar[m[k, 2]],
+                            sigma.t1.ref = get(paste0("sigma.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[m[k, 1]],
+                            sigma.t2.ref = get(paste0("sigma.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[m[k, 2]],
+                            rho = ifelse(corstr == "ar1", rho^abs(m[k, 1] - m[k, 2]), rho),
+                            rho.ref = get(paste0("cormat.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[m[k, 1], m[k, 2]],
+                            gammas = gammas, lambdas = lambdas)
+      }
+      assign(paste0("cormat.nr", (dtrs$a1[i] + 1) / 2, (dtrs$a2NR[i] + 1) / 2), x, envir = varEnv)
+    }))
+    
+    # NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
+    # 
+    # for (j in 1:nrow(NRgrid)) {
+    #   a1ind <- NRgrid$a1ind[j]
+    #   a2NRind <- NRgrid$a2NRind[j]
+    #   
+    #   x <- cormat(rho, length(times), corstr)
+    #   
+    #   for (i in 1:nrow(m)) {
+    #     x[m[i, 1], m[i, 2]] <- 
+    #       generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 0, a2NR = 2 * a2NRind - 1,
+    #                         t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
+    #                         design = 2, rprob = get(paste0("r", a1ind)),
+    #                         sigma.t1 = sigmaStar[m[i, 1]], sigma.t2 = sigmaStar[m[i, 2]],
+    #                         sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
+    #                         sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
+    #                         rho = ifelse(corstr == "ar1", rho^abs(m[i, 1] - m[i, 2]), rho),
+    #                         rho.ref = get(paste0("cormat.r", a1ind, 0), envir = varEnv)[m[i, 1], m[i, 2]],
+    #                         gammas = gammas, lambdas = lambdas)
+    #   }
+    #   assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = varEnv)
+    # }
+  } else if (design == 3) {
+    assign("sigma.r10", sigma.r1, envir = varEnv)
+    assign("sigma.r00", sigma.r0, envir = varEnv)
+    
+    assign("cormat.r10", cormat.r1, env = varEnv)
+    assign("cormat.r00", cormat.r0, env = varEnv)
+    
+    invisible(sapply(1:nDTR, function(i) {
+      assign(paste0("sigma.nr", (dtrs$a1[i] + 1) / 2, abs(dtrs$a2NR[i]) * (dtrs$a2NR[i] + 1) / 2),
+             unname(sapply(1:length(times), function(j) {
+               generate.cond.sd(a1 = dtrs$a1[i], r = 0, a2R = dtrs$a2R[i], a2NR = dtrs$a2NR[i],
+                                obsTime = times[j], spltime, design = 3, 
+                                rprob = get(paste0("r", (dtrs$a1[j] + 1) / 2)),
+                                sigma = sigma[j],
                                 sigma.cond = get(paste0("sigma.r", (dtrs$a1[i] + 1) / 2, 0), envir = varEnv)[j],
                                 gammas = gammas, lambdas = lambdas)
              })), envir = varEnv)
     }))
     
     NRgrid <- expand.grid("a1ind" = c(0, 1), "a2NRind" = c(0, 1))
+    NRgrid <- subset(NRgrid, !(a1ind == 0 & a2NRind == 1))
     
     for (j in 1:nrow(NRgrid)) {
       a1ind <- NRgrid$a1ind[j]
@@ -292,7 +355,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
         x[m[i, 1], m[i, 2]] <- 
           generate.cond.cor(a1 = 2 * a1ind - 1, r = 0, a2R = 0, a2NR = 2 * a2NRind - 1,
                             t1 = times[m[i, 1]], t2 = times[m[i, 2]], spltime = spltime,
-                            design = 2, rprob = get(paste0("r", a1ind)),
+                            design = 3, rprob = get(paste0("r", a1ind)),
                             sigma.t1 = sigma[m[i, 1]], sigma.t2 = sigma[m[i, 2]],
                             sigma.t1.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 1]],
                             sigma.t2.ref = get(paste0("sigma.r", a1ind, 0), envir = varEnv)[m[i, 2]],
@@ -302,15 +365,16 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
       }
       assign(paste0("cormat.nr", a1ind, a2NRind), x, envir = varEnv)
     }
-  } else 
-    stop("design 3 hasn't been implemented in conditionalVarmat")
-  
+    
+  } else {
+    warning("Design must be 1-3")
+  }
   
   condVarmats <- lapply(1:nrow(A), function(dtr) {
     a1ind   <- (A$a1[dtr] + 1) / 2
     R       <- A$r[dtr]
     a2Rind  <- ifelse(A$a2R[dtr] == 0, 0, (A$a2R[dtr] + 1) / 2)
-    a2NRind <- (A$a2NR[dtr] + 1) / 2
+    a2NRind <- abs(A$a2NR[dtr]) * (A$a2NR[dtr] + 1) / 2
     xsd  <- diag(get(paste0("sigma.", ifelse(R == 1, "r", "nr"),
                             a1ind, ifelse(R == 1, a2Rind, a2NRind)),
                      envir = varEnv))
@@ -321,12 +385,6 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
   })
   names(condVarmats) <- apply(A, 1, function(x) paste(x, collapse = " "))
   condVarmats
-}
-
-### Construct a t-by-t AR(1) correlation matrix with parameter rho
-cormat.ar1 <- function(rho, t) {
-  m <- diag(t)
-  rho^(abs(row(m) - col(m)))
 }
 
 ### Construct a t-by-t correlation matrix
@@ -589,11 +647,11 @@ finalize.results <- function(x) {
   return(result)
 }
 
-generate.sd <- function(sigma, a1, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas) {
+generate.sd <- function(sigma, a1, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas) {
   dtrs <- dtrIndex(design)
   mu <- sapply(1:length(dtrs$a1), function(i) {
-    c(conditional.model(dtrs$a1[i], 1, dtrs$a2R[i], 0, t, spltime, design, rprob, gammas, lambdas),
-    conditional.model(dtrs$a1[i], 0, 0, dtrs$a2NR[i], t, spltime, design, rprob, gammas, lambdas))
+    c(conditional.model(dtrs$a1[i], 1, dtrs$a2R[i], 0, obsTime, spltime, design, rprob, gammas, lambdas),
+    conditional.model(dtrs$a1[i], 0, 0, dtrs$a2NR[i], obsTime, spltime, design, rprob, gammas, lambdas))
   })
   stage1 <- (a1 + 1) / 2
   sqrt(sigma^2 + stage1 * a2R * a2NR *
@@ -630,12 +688,12 @@ generate.cond.cor <- function(a1, r, a2R, a2NR, t1, t2, spltime, design, rprob,
   #      rprob * (1 - rprob) * (rmean.t1 - nrmean.t1) * (rmean.t2 - nrmean.t2))
 }
 
-generate.cond.sd <- function(a1, r, a2R, a2NR, t, spltime, design, rprob, 
+generate.cond.sd <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob, 
                            sigma, sigma.cond, gammas, lambdas) {
-  rmean  <- conditional.model(a1, 1, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas)
-  nrmean <- conditional.model(a1, 0, a2R, a2NR, t, spltime, design, rprob, gammas, lambdas)
+  rmean  <- conditional.model(a1, 1, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas)
+  nrmean <- conditional.model(a1, 0, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas)
   
-  if (t <= spltime) {
+  if (obsTime <= spltime) {
     sigma
   } else {
     sqrt((1 / (r * rprob + (1 - r) * (1 - rprob))) *
@@ -646,9 +704,9 @@ generate.cond.sd <- function(a1, r, a2R, a2NR, t, spltime, design, rprob,
   }
 }
 
-marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
-  if (t <= spltime) {
-    mu <- gammas[1] + t * (gammas[2] + gammas[3] * a1)
+marginal.model <- function(a1, a2R, a2NR, obsTime, spltime, design, gammas) {
+  if (obsTime <= spltime) {
+    mu <- gammas[1] + obsTime * (gammas[2] + gammas[3] * a1)
   } else {
     if (design == 1) {
       if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
@@ -661,7 +719,7 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
       if (length(gammas) != 6) stop("for design 3 gammas must be length 6.")
       mu <- gammas[4] + gammas[5] * a1 + gammas[6] * (a1 == 1) * a2NR
     }
-    mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + (t - spltime) * mu
+    mu <- gammas[1] + spltime * (gammas[2] + gammas[3] * a1) + (obsTime - spltime) * mu
   }
   mu
 }
@@ -669,8 +727,8 @@ marginal.model <- function(a1, a2R, a2NR, t, spltime, design, gammas) {
 meanvec <- function(times, spltime, design, gammas) {
   A <- dtrIndex(design)
   do.call(cbind, lapply(1:length(A$a1), function(dtr) {
-    do.call(rbind, lapply(times, function(t) {
-      marginal.model(A$a1[dtr], A$a2R[dtr], A$a2NR[dtr], t, spltime, design, gammas)
+    do.call(rbind, lapply(times, function(obsTime) {
+      marginal.model(A$a1[dtr], A$a2R[dtr], A$a2NR[dtr], obsTime, spltime, design, gammas)
     }))
   }))
 }
