@@ -15,11 +15,11 @@ combine.results <- function(list1, list2) {
   valid      <- list1$valid + list2$valid
   condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                     list1$condVars, list2$condVars)
-
+  
   result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
                  "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
                  "condVars" = condVars)
-
+  
   if ("data" %in% names(list1)) {
     dataList <- c(list1$data, list2$data)
     result[["data"]] <- dataList
@@ -57,8 +57,8 @@ conditional.model <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob,
     if (design == 1) {
       if (length(gammas) != 9) stop("for design 1 gammas must be length 9.")
       mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + r * (gammas[6] * a2R + gammas[8] * a1 * a2R) / rprob + 
-                               (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
-                               (r - rprob) * (lambdas[1] + lambdas[2] * a1))
+                                     (1 - r) * (gammas[7] * a2NR + gammas[9] * a1 * a2NR) / (1 - rprob) +
+                                     (r - rprob) * (lambdas[1] + lambdas[2] * a1))
     } else if (design == 2) {
       if (length(gammas) != 7) stop("for design 2, gammas must be length 7.")
       mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
@@ -73,7 +73,7 @@ conditional.model <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob,
   }
   mu
 }
- 
+
 conditionalVarmat <- function(times, spltime, design, r1, r0,
                               corstr = c("identity", "exchangeable", "ar1"),
                               sigma, sigma.r1, sigma.r0,
@@ -81,21 +81,21 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
                               rho, rho.r1, rho.r0,
                               gammas, lambdas) {
   
-    nDTR <- switch(design, 8, 4, 3)
-    varEnv <- new.env()
-    corstr <- match.arg(corstr)
-    A <- conditionalIndex(design)
-    dtrs <- dtrIndex(design)
-    dtrMatrix <- do.call(cbind, dtrs)
+  nDTR <- switch(design, 8, 4, 3)
+  varEnv <- new.env()
+  corstr <- match.arg(corstr)
+  A <- conditionalIndex(design)
+  dtrs <- dtrIndex(design)
+  dtrMatrix <- do.call(cbind, dtrs)
   
-    if (length(sigma) == 1) {
-      sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = length(times))
-    } else if (length(sigma) == length(times)) {
-      sigma <- matrix(rep(sigma, nDTR), nrow = nDTR, byrow = T)
-    } else if (length(sigma) != length(times) & length(sigma) != nDTR * length(times)) {
-      stop("sigma must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
-    }
-    
+  if (length(sigma) == 1) {
+    sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = length(times))
+  } else if (length(sigma) == length(times)) {
+    sigma <- matrix(rep(sigma, nDTR), nrow = nDTR, byrow = T)
+  } else if (length(sigma) != length(times) & length(sigma) != nDTR * length(times)) {
+    stop("sigma must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
+  }
+  
   ## Handle sigma.r1, sigma.r0 inputs in case sum(times > spltime) > 1 
   ## (i.e., more than one measurement after re-randomization)
   if (length(sigma.r1) == 1 & sum(times > spltime) > 1) {
@@ -589,7 +589,7 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   
   # Construct numerator for estimator of rho in exchangeable corstr
   numerator <- apply(r, 2, sum)
-
+  
   # Average over DTRs
   return(mean(numerator/denominator))
 }
@@ -618,7 +618,7 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
     numerator   <- apply(subset(resids, select = grep("dtr", names(resids))), 2, sum)
     denominator <- apply(subset(weightmat, select = grep("dtr", names(weightmat))), 2, sum) - length(gammas)
   } else if (!pool.time & pool.dtr) {
-      numerator <- do.call("c", lapply(times, function(x) {
+    numerator <- do.call("c", lapply(times, function(x) {
       sum(subset(resids, time == x, select = grep("dtr", names(resids))))
     }))
     denominator <- do.call("c", lapply(times, function(x) {
@@ -627,16 +627,16 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
     names(numerator) <- names(denominator) <- paste0("time", times)
   } else {
     numerator <- Reduce(function(...) merge(..., by = "time"),
-                           lapply(1:nDTR, function(dtr) {
-                             x <- list(resids[[paste0("dtr", dtr)]])
-                             sumsqrs <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                  by = list("time" = resids$time), sum)
-                             x <- list(weightmat[[paste0("dtr", dtr)]])
-                             sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                 by = list("time" = resids$time), sum)
-                             sumsqrs[, 2] <- sumsqrs[, 2] / sumwts[, 2]
-                             sumsqrs
-                           }))
+                        lapply(1:nDTR, function(dtr) {
+                          x <- list(resids[[paste0("dtr", dtr)]])
+                          sumsqrs <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                               by = list("time" = resids$time), sum)
+                          x <- list(weightmat[[paste0("dtr", dtr)]])
+                          sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                              by = list("time" = resids$time), sum)
+                          sumsqrs[, 2] <- sumsqrs[, 2] / sumwts[, 2]
+                          sumsqrs
+                        }))
     rownames(numerator) <- numerator$time 
     numerator <- as.matrix(numerator[, -1])
     denominator <- 1
@@ -655,9 +655,9 @@ finalize.results <- function(x) {
   rho.hat       <- mean(x$rho.hat, na.rm = T)
   coverage      <- as.numeric(x$coverage / x$valid)
   condVars      <- lapply(x$condVars, function(v) v / x$valid)
-
+  
   cat("Finishing...\n")
-
+  
   result <- list("n" = x$n, "alpha" = x$alpha, "power.target" = x$power.target, "delta" = x$delta,
                  "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
                  "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var,
@@ -673,7 +673,7 @@ generate.sd <- function(sigma, a1, a2R, a2NR, obsTime, spltime, design, rprob, g
   dtrs <- dtrIndex(design)
   mu <- sapply(1:length(dtrs$a1), function(i) {
     c(conditional.model(dtrs$a1[i], 1, dtrs$a2R[i], 0, obsTime, spltime, design, rprob, gammas, lambdas),
-    conditional.model(dtrs$a1[i], 0, 0, dtrs$a2NR[i], obsTime, spltime, design, rprob, gammas, lambdas))
+      conditional.model(dtrs$a1[i], 0, 0, dtrs$a2NR[i], obsTime, spltime, design, rprob, gammas, lambdas))
   })
   stage1 <- (a1 + 1) / 2
   sqrt(sigma^2 + stage1 * a2R * a2NR *
@@ -685,8 +685,8 @@ generate.sd <- function(sigma, a1, a2R, a2NR, obsTime, spltime, design, rprob, g
 }
 
 generate.cond.cor <- function(a1, r, a2R, a2NR, t1, t2, spltime, design, rprob,
-                            sigma.t1, sigma.t2, sigma.t1.ref, sigma.t2.ref,
-                            rho, rho.ref, gammas, lambdas) {
+                              sigma.t1, sigma.t2, sigma.t1.ref, sigma.t2.ref,
+                              rho, rho.ref, gammas, lambdas) {
   if (t1 == t2) {
     rho <- rho.r <- 1
   }
@@ -711,7 +711,7 @@ generate.cond.cor <- function(a1, r, a2R, a2NR, t1, t2, spltime, design, rprob,
 }
 
 generate.cond.sd <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob, 
-                           sigma, sigma.cond, gammas, lambdas) {
+                             sigma, sigma.cond, gammas, lambdas) {
   rmean  <- conditional.model(a1, 1, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas)
   nrmean <- conditional.model(a1, 0, a2R, a2NR, obsTime, spltime, design, rprob, gammas, lambdas)
   
@@ -873,12 +873,12 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
                "pval.power" = pval.power,
                "coverage" = l$coverage,
                "pval.coverage" = tryCatch(binom.test(x = l$coverage * l$valid,
-                                            n = l$valid, p = .95, 
-                                            alternative = "two.sided")$p.value,
+                                                     n = l$valid, p = .95, 
+                                                     alternative = "two.sided")$p.value,
                                           error = function(e) NULL),
                "nTrial" = l$niter,
                "nValid" = l$valid
-               )
+    )
   }))
   
   colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}\\right\\}$", "$\\rho$",
