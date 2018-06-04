@@ -105,10 +105,10 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
     sigma.r0 <- rep(sigma.r0, sum(times > spltime))
   }
   if (length(sigma.r1) != length(times)) {
-    sigma.r1 <- c(sigma[times <= spltime], sigma.r1)
+    sigma.r1 <- c(sigma[min(which(dtrs$a1 == 1)), times <= spltime], sigma.r1)
   }
   if (length(sigma.r0) != length(times)) {
-    sigma.r0 <- c(sigma[times <= spltime], sigma.r0)
+    sigma.r0 <- c(sigma[min(which(dtrs$a1 == -1)), times <= spltime], sigma.r0)
   }
   
   # Construct a matrix of (X,Y) coordinates which need to be adjusted in the conditional cor matrices
