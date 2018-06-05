@@ -1042,6 +1042,6 @@ varmat <- function(sigma2, rho, times, design, corstr = c("identity", "exchangea
   }
   
   lapply(1:nDTR, function(dtr) {
-    diag(sqrt(sigma2[, dtr])) %*% cormat(rho, length(times),corstr) %*% diag(sqrt(sigma2[, dtr]))
+    diag(sqrt(sigma2[dtr, ])) %*% cormat(rho, length(times),corstr) %*% diag(sqrt(sigma2[dtr, ]))
   })
 }
