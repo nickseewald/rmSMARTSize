@@ -910,6 +910,9 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
     }
   } else if (design == 3) {
     designEffect <- (3 - r) / 2
+    if (!conservative) {
+      correction <- (1-rho)*(3-r+6*rho-2*r*rho+2*rho^2)/((3-r)*(1+rho))
+    }
   }
   else stop("Not a valid design indicator.")
   
