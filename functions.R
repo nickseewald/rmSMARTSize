@@ -389,7 +389,7 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
 }
 
 ### Construct a t-by-t correlation matrix
-cormat <- function(rho, t, corstr = c("identity", "exchangeable", "ar1")) {
+cormat <- function(rho, t, corstr = c("identity", "exchangeable", "ar1", "unstructured")) {
   corstr <- match.arg(corstr)
   if (corstr == "identity") {
     diag(rep(1, t))
@@ -400,6 +400,14 @@ cormat <- function(rho, t, corstr = c("identity", "exchangeable", "ar1")) {
   } else if (corstr == "ar1") {
     m <- diag(t)
     rho^(abs(row(m) - col(m)))
+  } else if (corstr == "unstructured") {
+    if (length(rho) != t) stop("for unstructured corstr, must have rho of length t")
+    m <- diag(3)
+    tpairs <- combn(1:t, 2)
+    for (j in 1:ncol(tpairs)) {
+      m[tpairs[1, j], tpairs[2, j]] <- m[tpairs[2, j], tpairs[1, j]] <- rho[j]
+    }
+    m
   }
 }
 
@@ -507,7 +515,8 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
 }
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
-                         corstr = c("exchangeable", "ar1")) {
+                         corstr = c("exchangeable", "ar1", "unstructured"),
+                         pool.dtr = T) {
   ## FIXME: Allow for different rhos across DTRs
   
   corstr <- match.arg(corstr)
@@ -549,13 +558,14 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   
   # Sum weights over individuals 
   # (but only use one weight per person -- weightmat has duplicated rows: 1 per time)
-  sumweights <- apply(Reduce(function(...) merge(..., by = "time"), 
-                             lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
-                               x <- list(weightmat[[paste0("dtr", dtr)]])
-                               sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
-                                                   by = list("time" = resids$time), sum)
-                             }))[, -1],
-                      2, unique)
+  sumweights.time <- Reduce(function(...) merge(..., by = "time"), 
+                            lapply(1:sum(grepl("dtr", names(d))), function(dtr) {
+                              x <- list(weightmat[[paste0("dtr", dtr)]])
+                              sumwts <- aggregate(x = setNames(x, paste0("dtr", dtr)),
+                                                  by = list("time" = resids$time), sum)
+                            }))[, -1]
+  rownames(sumweights.time) <- times
+  sumweights <- apply(sumweights.time, 2, unique)
   
   if (corstr == "exchangeable") {
     # For every id and every dtr, compute (\sum_{s<t} r_{s} * r_{t} / sigma_{s} sigma_{t}
@@ -567,8 +577,9 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                               sum((subdat[ti, paste0("dtr", dtr)] / sigma[ti, dtr]) *
                                     (subdat[1:(ti - 1), paste0("dtr", dtr)] / sigma[1:(ti - 1), dtr]))
                             }))
-                          })
+                          }) * weights$weight[weights$id == unique(subdat$id)]
                         }))
+    colnames(r) <- grep("dtr", names(resids), value = T)
     denominator <- sumweights * (length(times) * (length(times) - 1) / 2) - length(gammas)
   } else if (corstr == "ar1") {
     r <- do.call(rbind,
@@ -579,19 +590,45 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                               sum((subdat[time, paste0("dtr", dtr)] / sigma[time, dtr]) *
                                     (subdat[time - 1, paste0("dtr", dtr)] / sigma[time - 1, dtr]))
                             }))
-                          })
+                          }) * weights$weight[weights$id == unique(subdat$id)]
                         }))
+    colnames(r) <- grep("dtr", names(resids), value = T)
     denominator <- sumweights * (length(times) - 1) - length(gammas)
+  } else if (corstr == "unstructured") {
+    m <- combn(times, 2)
+    r <- lapply(split.data.frame(resids, resids$id),
+                function(subdat) {
+                  x <- do.call(rbind, lapply(1:ncol(m), function(tpair) {
+                    # data.frame("tpair" = paste(m[, tpair], collapse = ""), 
+                               sapply(1:sum(grepl("dtr", names(subdat))), function(dtr) {
+                                 prod(subdat[subdat$time %in% m[, tpair], paste0("dtr", dtr)]) /
+                                   prod(sigma[rownames(sigma) %in% m[, tpair], paste0("dtr", dtr)])
+                               }) * weights$weight[weights$id == unique(subdat$id)]
+                  }))
+                  rownames(x) <- sapply(1:ncol(m), function(j) paste(m[, j], collapse = ""))
+                  x
+                })
+    r <- lapply(1:ncol(m), function(tpair) {
+      do.call(rbind,
+              lapply(r, function(x) x[paste(m[, tpair], collapse = ""), ]))
+    })
+    names(r) <- sapply(1:ncol(m), function(j) paste(m[, j], collapse = ""))
   }
   
-  # Weight residual sums
-  r <- weights$weight * r
+  if (is.list(r)) {
+    numerator <- lapply(r, colSums)
+    denominator <- sumweights - length(gammas)
+    rhoHat <- do.call(rbind, lapply(numerator, function(x) x / denominator))
+    if (pool.dtr) 
+      rhoHat <- apply(rhoHat, 1, mean)
+  } else {
+    numerator <- colSums(r)
+    rhoHat <- numerator / denominator
+    if (pool.dtr)
+      rhoHat <- mean(rhoHat)
+  }
   
-  # Construct numerator for estimator of rho in exchangeable corstr
-  numerator <- apply(r, 2, sum)
-  
-  # Average over DTRs
-  return(mean(numerator/denominator))
+  return(rhoHat)
 }
 
 
@@ -1031,20 +1068,33 @@ validTrial <- function(d, design) {
 }
 
 ### Construct V matrix 
-varmat <- function(sigma2, rho, times, design, corstr = c("identity", "exchangeable", "ar1")) {
+varmat <- function(sigma2, rho, times, design, corstr = c("identity", "exchangeable", "ar1", "unstructured")) {
   nDTR <- switch(design, 8, 4, 3)
   corstr <- match.arg(corstr)
   
   ## FIXME: accomodate for pooling over time but not DTR (maybe? this is an impossible scenario, but...)
   if (length(sigma2) == 1) {
-    sigma2 <- matrix(rep(sigma2, nDTR * length(times)), ncol = length(times))
+    sigma2 <- matrix(rep(sigma2, nDTR * length(times)), ncol = nDTR)
   } else if (length(sigma2) == length(times)) {
     sigma2 <- matrix(rep(sigma2, nDTR), ncol = nDTR, byrow = F)
   } else if (length(sigma2) != length(times) & length(sigma2) != nDTR * length(times)) {
     stop("sigma2 must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
   }
   
-  lapply(1:nDTR, function(dtr) {
-    diag(sqrt(sigma2[dtr, ])) %*% cormat(rho, length(times),corstr) %*% diag(sqrt(sigma2[dtr, ]))
-  })
+  if (length(rho) == 1 & corstr == "unstructured") {
+    warning("rho is length 1 with unstructured corstr. Setting corstr to exchangeable.")
+    corstr <- "exchangeable"
+  } else if (corstr == "unstructured") {
+    if (!is.matrix(rho) | (is.matrix(rho) & !all.equal(dim(rho), c(length(times), nDTR)))) {
+      stop("rho is not of proper dimension: must be T by nDTR")
+    } else {
+      lapply(1:nDTR, function(dtr) {
+        diag(sqrt(sigma2[, dtr])) %*% cormat(rho[, dtr], length(times),corstr) %*% diag(sqrt(sigma2[, dtr]))
+      })
+    }
+  } else {
+    lapply(1:nDTR, function(dtr) {
+      diag(sqrt(sigma2[, dtr])) %*% cormat(rho, length(times),corstr) %*% diag(sqrt(sigma2[, dtr]))
+    })
+  }
 }
