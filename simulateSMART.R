@@ -66,7 +66,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 sigma, sigma.r1 = sigma, sigma.r0 = sigma,
                 corstr = c("identity", "exchangeable", "ar1"),
                 rho = NULL, rho.r1 = rho, rho.r0 = rho, rho.size = rho,
-                L = NULL, varmats = NULL,
+                L = NULL, varmats = NULL, respModel = "indep",
                 pool.time = TRUE, pool.dtr = TRUE,
                 niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                 save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
@@ -103,12 +103,12 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      conservative = conservative)
   
   # Compute conditional variances
-  varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
-                               corstr = corstr,
-                               sigma, sigma.r1, sigma.r0,
-                               uneqsd = NULL, uneqsdDTR = NULL,
-                               rho, rho.r1, rho.r0,
-                               gammas, lambdas)
+  # varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
+  #                              corstr = corstr,
+  #                              sigma, sigma.r1, sigma.r0,
+  #                              uneqsd = NULL, uneqsdDTR = NULL,
+  #                              rho, rho.r1, rho.r0,
+  #                              gammas, lambdas)
   
   ## Simulate
   message(paste0("********************\n",
@@ -128,7 +128,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                        
                        d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
                                           corstr = corstr, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
-                                          balanceRand = balanceRand, empirical = empirical)
+                                          balanceRand = balanceRand, empirical = empirical, respModel = respModel)
                         if (d$valid == FALSE) {
                          result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
                                         "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
