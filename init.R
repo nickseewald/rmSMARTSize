@@ -9,17 +9,16 @@ library(doRNG)
 library(slackr)
 library(xtable)
 
-wd <- getwd()
+source(here("functions.R"))
+source(here("generateSMART.R"))
+source(here("simulateSMART.R"))
 
-source(paste0(wd, "/functions.R"))
-source(paste0(wd, "/generateSMART.R"))
-source(paste0(wd, "/simulateSMART.R"))
+slackrSetup(config_file = here("njssimsslack.dcf"))
 
-slackrSetup(config_file = paste0(wd, "/d3slack.dcf"))
 
 ### CLUSTER SETUP ###
 # Check for Flux and create cluster appropriately
-if (Sys.info()["sysname"] != "Windows"){
+if (Sys.info()["sysname"] != "Windows") {
   clus <- startMPIcluster()
 } else {
   ncore <- detectCores()
@@ -41,15 +40,14 @@ if (Sys.info()["sysname"] != "Windows"){
 #   source(paste0(wd, "/simulateSMART.R"), echo = F)
 # })
 
-if (Sys.info()["sysname"] != "Windows"){
+if (Sys.info()["sysname"] != "Windows") {
   registerDoMPI(clus)
 } else {
   registerDoParallel(clus)
 }
 
-if (Sys.info()["sysname"] != "Windows"){
+if (Sys.info()["sysname"] != "Windows") {
   nWorkers <- clus$workerCount
 } else {
   nWorkers <- length(clus)
 }
-
