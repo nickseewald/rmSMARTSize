@@ -60,18 +60,18 @@
 #'
 #' @examples
 simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
-                alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
-                r = NULL, r1 = r, r0 = r,
-                uneqsdDTR = NULL, uneqsd = NULL, 
-                sigma, sigma.r1 = sigma, sigma.r0 = sigma,
-                corstr = c("identity", "exchangeable", "ar1"),
-                rho = NULL, rho.r1 = rho, rho.r0 = rho, rho.size = rho,
-                L = NULL, varmats = NULL, respModel = "indep",
-                pool.time = TRUE, pool.dtr = TRUE,
-                niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
-                notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
-
+                          alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
+                          r = NULL, r1 = r, r0 = r,
+                          uneqsdDTR = NULL, uneqsd = NULL, 
+                          sigma, sigma.r1 = sigma, sigma.r0 = sigma,
+                          corstr = c("identity", "exchangeable", "ar1"),
+                          rho = NULL, rho.r1 = rho, rho.r0 = rho, rho.size = rho,
+                          L = NULL, varmats = NULL, respModel = c("independent", "oneThreshold", "twoThreshold", "beta"),
+                          pool.time = TRUE, pool.dtr = TRUE,
+                          niter = 5000, tol = 1e-8, maxiter.solver = 1000,
+                          save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
+                          notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
+  
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) stop("You must provide either r or both r1 and r0.")
   ## TODO: Finish input handling
@@ -102,6 +102,19 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      design = design, round = round,
                      conservative = conservative)
   
+  respModel <- match.arg(respModel)
+  
+  if (respModel == "oneThreshold") {
+    if (design != 2) stop("oneThreshold is not yet implemented for any design other than 2")
+    upsilon <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = F)
+    r0temp <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
+    if (r0temp != r0) {
+      warning(paste("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.",
+                    "The provided value is", r0, "and the new value is", r0))
+      r0 <- r0temp
+    }
+  }
+  
   # Compute conditional variances
   # varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
   #                              corstr = corstr,
@@ -110,102 +123,111 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   #                              rho, rho.r1, rho.r0,
   #                              gammas, lambdas)
   
-  ## Simulate
-  message(paste0("********************\n",
-                 "Starting simulation!\n",
-                 "delta = ", delta, "\n",
-                 "true corstr = ", corstr, "(", rho, ")\n",
-                 "sized for exchangeable(", rho.size, ")\n",
-                 "r0 = ", r0, ", r1 = ", r1, "\n",
-                 ifelse(is.null(postIdentifier), NULL, postIdentifier),
-                 "\nn = ", n, "\n",
-                 niter, " iterations.\n",
-                 "********************\n"))
-  results <- foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
-                     .export = ls(envir = .GlobalEnv), .packages = c("MASS", "xtable", "slackr"),
-                     .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE,
-                     .inorder = FALSE) %dorng% { 
-                       
-                       d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
-                                          corstr = corstr, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
-                                          balanceRand = balanceRand, empirical = empirical, respModel = respModel)
-                        if (d$valid == FALSE) {
-                         result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
-                                        "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
-                                        "sigma2.hat" = matrix(ncol = (length(times) * (1 - pool.time) * pool.dtr) +
-                                                                4 * (1 - pool.dtr) +
-                                                                (pool.time * pool.dtr),
-                                                              nrow = (length(times) * (1 - pool.dtr) +
-                                                                        (4 * (1 - pool.dtr) * pool.time) +
-                                                                        (pool.time * pool.dtr))),
-                                        "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
-                                        "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
-                                        "alpha" = alpha, "power.target" = power)
-                         # if (save.data) {
-                         #   result[["data"]] <- list(d$data)
-                         # }
-                         return(result)
-                       } else {
-                         d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
-                                       times = times, direction = "long", v.names = "Y")
-                         d1 <- d1[order(d1$id, d1$time), ]
-                         
-                         param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
-                         
-                         sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                       pool.time = pool.time, pool.dtr = pool.dtr)
-                         
-                         rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
-                         
-                         # Compute variance matrices for all conditional cells
-                         condVars <- lapply(split.SMART(d$data), function(x) {
-                           var(subset(x, select = grep("Y", names(x), value = TRUE)))
-                         })
-                         
-                         # Iterate parameter estimation
-                         outcome.var <- varmat(sigma2.hat, rho.hat, times, design, corstr = "exchangeable")
-                         param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
-                         # Iterate until estimates of gammas and rho converge
-                         for (i in 1:maxiter.solver) {
-                           sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
-                                                         pool.time = pool.time, pool.dtr = pool.dtr)
-                           rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
-                           outcomeVar.new <- varmat(sigma2.new, rho.new, times, design, corstr = "exchangeable")
-                           param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
-                           if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
-                               (rho.new - rho.hat)^2 <= tol) {
-                             param.hat <- param.new
-                             sigma2.hat <- sigma2.new
-                             rho.hat <- rho.new
-                             iter <- i
-                             break
-                           } else {
-                             param.hat <- param.new
-                             sigma2.hat <- sigma2.new
-                             rho.hat <- rho.new
-                             iter <- i
-                           }
-                         }
-                         param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr = "exchangeable"),
-                                                        times, spltime, design, gammas = param.hat)
-                         
-                         confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)
-                         confUB <- L %*% param.hat + sqrt(L %*% param.var %*% L) * qnorm(.975)
-                         
-                         coverage <- ifelse(confLB <= L %*% gammas & L %*% gammas <= confUB, 1, 0)
-                         
-                         pval <- 1 - pnorm(as.numeric((L %*% param.hat) / sqrt(L %*% param.var %*% L)))
-                         
-                         result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
-                                        "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
-                                        "iter" = iter, "condVars" = condVars)
-                         if (save.data) {
-                           result[["data"]] <- list(d$data)
-                         }
-                         
-                         return(result)
-                       }
-                     }
+  ## Construct string describing simulation parameters
+  designText <- paste0("Design ", design,
+                       ifelse(is.null(postIdentifier), NULL, postIdentifier),
+                       "delta = ", delta, "\n",
+                       "response model = ", respModel, "\n",
+                       "true corstr = ", corstr, "(", rho, ")\n",
+                       "sized for exchangeable(", rho.size, ")\n",
+                       "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3), "\n",
+                       "\nn = ", n, "\n",
+                       niter, " iterations.\n")
+  
+  ## Print message in console describing the simulation that's currently running
+  message(
+    paste0("********************\n",
+           "Starting simulation!\n",
+           designText,
+           "********************\n")
+    )
+  
+  results <-
+    foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
+            .export = ls(envir = .GlobalEnv), .packages = c("MASS", "xtable", "slackr"),
+            .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE,
+            .inorder = FALSE) %dorng% { 
+              
+              d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
+                                 corstr = corstr, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
+                                 balanceRand = balanceRand, empirical = empirical, respModel = respModel)
+              if (d$valid == FALSE) {
+                ## If a non-valid trial has been generated (i.e., fewer than one observation per cell), return a "blank" result
+                result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
+                               "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
+                               "sigma2.hat" = matrix(ncol = (length(times) * (1 - pool.time) * pool.dtr) +
+                                                       4 * (1 - pool.dtr) +
+                                                       (pool.time * pool.dtr),
+                                                     nrow = (length(times) * (1 - pool.dtr) +
+                                                               (4 * (1 - pool.dtr) * pool.time) +
+                                                               (pool.time * pool.dtr))),
+                               "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
+                               "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
+                               "alpha" = alpha, "power.target" = power)
+                # if (save.data) {
+                #   result[["data"]] <- list(d$data)
+                # }
+                return(result)
+              } else {
+                d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
+                              times = times, direction = "long", v.names = "Y")
+                d1 <- d1[order(d1$id, d1$time), ]
+                
+                param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
+                
+                sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
+                                              pool.time = pool.time, pool.dtr = pool.dtr)
+                
+                rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
+                
+                # Compute variance matrices for all conditional cells
+                condVars <- lapply(split.SMART(d$data), function(x) {
+                  var(subset(x, select = grep("Y", names(x), value = TRUE)))
+                })
+                
+                # Iterate parameter estimation
+                outcome.var <- varmat(sigma2.hat, rho.hat, times, design, corstr = "exchangeable")
+                param.hat <- estimate.params(d1, outcome.var, times, spltime, design, param.hat, maxiter.solver, tol)
+                # Iterate until estimates of gammas and rho converge
+                for (i in 1:maxiter.solver) {
+                  sigma2.new <- estimate.sigma2(d1, times, spltime, design, param.hat,
+                                                pool.time = pool.time, pool.dtr = pool.dtr)
+                  rho.new <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
+                  outcomeVar.new <- varmat(sigma2.new, rho.new, times, design, corstr = "exchangeable")
+                  param.new <- estimate.params(d1, outcomeVar.new, times, spltime, design, start = param.hat, maxiter.solver, tol)
+                  if (norm(param.new - param.hat, type = "F") <= tol & norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), type = "F") <= tol &
+                      (rho.new - rho.hat)^2 <= tol) {
+                    param.hat <- param.new
+                    sigma2.hat <- sigma2.new
+                    rho.hat <- rho.new
+                    iter <- i
+                    break
+                  } else {
+                    param.hat <- param.new
+                    sigma2.hat <- sigma2.new
+                    rho.hat <- rho.new
+                    iter <- i
+                  }
+                }
+                param.var <- estimate.paramvar(d1, cormat(rho.hat, length(times), corstr = "exchangeable"),
+                                               times, spltime, design, gammas = param.hat)
+                
+                confLB <- L %*% param.hat - sqrt(L %*% param.var %*% L) * qnorm(.975)
+                confUB <- L %*% param.hat + sqrt(L %*% param.var %*% L) * qnorm(.975)
+                
+                coverage <- ifelse(confLB <= L %*% gammas & L %*% gammas <= confUB, 1, 0)
+                
+                pval <- 1 - pnorm(as.numeric((L %*% param.hat) / sqrt(L %*% param.var %*% L)))
+                
+                result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
+                               "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
+                               "iter" = iter, "condVars" = condVars)
+                if (save.data) {
+                  result[["data"]] <- list(d$data)
+                }
+                return(result)
+              }
+            }
   
   results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
                     "corstr" = corstr, "rho" = rho, "rho.r0" = rho.r0, "rho.r1" = rho.r1,
@@ -218,20 +240,12 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   results <- c(results, "power" = unname(test$estimate), "pval.power" = unname(test$p.value))
   
-  postMessageText <- paste0(ifelse(!is.null(postIdentifier), paste0(postIdentifier, "\n"), ""),
-                            "\ntrue corr structure = ", corstr, "(", rho, ")",
-                            "\nr0 = ", r0, ", r1 = ", r1,
-                            "\neffect size = ", delta,
-                            "\nn = ", n,
-                            "\ntarget power = ", power,
-                            "\nempirical power = ", results$power,
-                            " (p = ", round(results$pval.power, 3), ")"
-  )
-  
   class(results) <- c("simResult", class(results))
   
   if (notify) {
-    try(slackr_bot(postMessageText))
+    try(slackr_bot(paste0(designText,
+                          "\nempirical power = ", results$power,
+                          " (p = ", round(results$pval.power, 3), ")")))
     try(slackr_bot(print(results)))
     # pbPost("note", "Simulation Complete!", body = postMessageText, recipients = pbDevice)
   }
