@@ -26,10 +26,10 @@
 #' @export
 #'
 #' @examples
-generateSMART <- function(n, times, spltime, r1, r0 = NULL, gammas, lambdas, design, balanceRand = FALSE,
+generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, balanceRand = FALSE,
                           sigma, sigma.r1, sigma.r0, corstr = c("identity", "exchangeable", "ar1"),
                           uneqsdDTR = NULL, uneqsd = NULL, varmats = NULL,
-                          respModel = c("independent", "oneThreshold", "twoThreshold"),
+                          respModel = c("independent", "oneThreshold", "twoThreshold", "beta"),
                           rho = NULL, rho.r1 = rho, rho.r0 = rho, empirical = FALSE) {
   
   # times:    Vector of times at which measurements are collected (currently limited to length three)
@@ -86,14 +86,26 @@ generateSMART <- function(n, times, spltime, r1, r0 = NULL, gammas, lambdas, des
     if (design != 2) stop("oneThreshold is not yet implemented for any design other than 2")
     upsilon <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = F)
     d$R <- as.numeric(d$Y1 >= upsilon)
-    warning("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.")
-    r0 <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
+    r0temp <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
+    if (r0temp != r0) {
+      warning(paste("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.",
+                    "The provided value is", r0, "and the new value is", r0))
+      r0 <- r0temp
+    }
   } else if (respModel == "twoThreshold") {
     if (design != 2) stop("twoThreshold is not yet implemented for any design other than 2")
     upsilon1 <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = F)
     upsilon0 <- qnorm(r0, as.numeric(c(c(1, 1, -1), rep(0, 4)) %*% gammas), sigma, lower.tail = F)
     d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1)
     d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0)
+  } else if (respModel == "beta") {
+    shape1 <- r1 / (1 - r1)
+    shape0 <- r0 / (1 - r0)
+    x <- pnorm(d$Y1, mean = gammas[1] + gammas[2] + gammas[3]*d$A1, sd = sigma)
+    respProb <- vector("numeric", n)
+    respProb[d$A1 ==  1] <- qbeta(x[d$A1 ==  1], shape1 = shape1, shape2 = 1)
+    respProb[d$A1 == -1] <- qbeta(x[d$A1 == -1], shape1 = shape0, shape2 = 1)
+    d$R <- sapply(1:n, function(i) rbinom(1, 1, respProb[i]))
   }
   
   if (design == 1) {
