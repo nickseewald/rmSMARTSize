@@ -8,6 +8,7 @@ library(doMPI)
 library(doRNG)
 library(slackr)
 library(xtable)
+library(here)
 
 source(here("functions.R"))
 source(here("generateSMART.R"))
