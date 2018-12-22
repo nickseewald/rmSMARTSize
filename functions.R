@@ -1,5 +1,21 @@
-### Functions for simulations of SMARTs with continuous repeated-measures outcomes
-### Nick Seewald
+# functions.R
+# Functions for simulations of SMARTs with continuous repeated-measures outcomes
+# Copyright 2018 Nicholas J. Seewald
+#
+# This file is part of rmSMARTsize.
+# 
+# rmSMARTsize is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# rmSMARTsize is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
@@ -15,10 +31,11 @@ combine.results <- function(list1, list2) {
   valid      <- list1$valid + list2$valid
   condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                     list1$condVars, list2$condVars)
+  respCor    <- list1$respCor + list2$respCor
   
   result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
                  "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-                 "condVars" = condVars)
+                 "condVars" = condVars, "respCor" = respCor)
   
   if ("data" %in% names(list1)) {
     dataList <- c(list1$data, list2$data)
@@ -61,8 +78,9 @@ conditional.model <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob,
                                      (r - rprob) * (lambdas[1] + lambdas[2] * a1))
     } else if (design == 2) {
       if (length(gammas) != 7) stop("for design 2, gammas must be length 7.")
-      mu <- (obsTime - spltime) * (gammas[4] + gammas[5] * a1 + gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR) +
-        (obsTime - spltime) * ((rprob / (1 - rprob)) * (gammas[6] * (1 - r) * a2NR + gammas[7] * (1 - r) *a1 * a2NR)) + 
+      mu <- (obsTime - spltime) * 
+        (gammas[4] + gammas[5] * a1 + 
+           (gammas[6] * (1 - r) * a2NR + gammas[7] * a1 * (1 - r) * a2NR)/(1 - rprob)) +
         (obsTime - spltime) * (r - rprob) * (lambdas[1] + lambdas[2] * a1)
     } else if (design == 3) {
       if (length(gammas) != 6) stop("for design 3, gammas must be length 6.")
@@ -450,7 +468,7 @@ esteqn.compute <- function(d, V, times, spltime, design, gammas) {
   resids <- cbind("id" = d$id, resids * d[, grep("dtr", names(d))] *
                     matrix(rep(d$weight, nDTR), ncol = nDTR))
   
-  DVinv <- lapply(1:nDTR, function(i) t(deriv[[i]]) %*% solve(V[[i]]))
+  DVinv <- lapply(1:nDTR, function(i) crossprod(deriv[[i]], solve(V[[i]])))
   
   Reduce("+", lapply(split.data.frame(resids, resids$id), function(x) {
     Reduce("+", lapply(1:nDTR, function(dtr) {
@@ -473,7 +491,7 @@ esteqn.jacobian <- function(d, V, times, spltime, design) {
   Reduce("+", lapply(split.data.frame(d, d$id), function(x) {
     Reduce("+", lapply(1:nDTR, function(dtr) {
       unique(x[[paste0("dtr", dtr)]]) * unique(x$weight) *
-        t(deriv[[dtr]]) %*% solve(V[[dtr]]) %*% deriv[[dtr]]
+        crossprod(deriv[[dtr]],solve(V[[dtr]])) %*% deriv[[dtr]]
     }))
   })) / -length(unique(d$id))
 }
@@ -512,6 +530,40 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   n <- length(unique(d$id))
   J <- esteqn.jacobian(d, V, times, spltime, design)
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
+}
+
+estimate.respCor <- function(d, design, times, spltime, gammas) {
+  # if (class(d) != "SMART")
+  nDTR <- switch(design, 8, 4, 3)
+  dtrs <- dtrIndex(design)
+  
+  # Get all distinct pairs of times in stage 1
+  corPairs <- combn(times[times <= spltime], 2)
+  # Add "squared" times (i.e., non-distinct pairs like 0,0)
+  corPairs <- cbind(corPairs,
+                    do.call(cbind, lapply(times[times <= spltime],
+                                          function(x) rep(x, 2))))
+  # sort corPairs by time
+  corPairs <- corPairs[, order(corPairs[1, ], corPairs[2, ])]
+  
+  # Get means for each DTR at each time
+  ## DTRs are columns, times are rows
+  m <- meanvec(times, spltime, 2, gammas)
+  
+  x <- lapply(1:nDTR, function(i) {
+    # subset data to only look at those consistent with one DTR at a time
+    with(d[d[[paste0("dtr", i)]] == 1, ],
+         # loop over columns of corPairs
+         sapply(1:ncol(corPairs), function(j) {
+           cor(R, (get(paste0("Y", corPairs[1, j])) - m[which(times == corPairs[1, j]), i]) * 
+                 (get(paste0("Y", corPairs[2, j])) - m[which(times == corPairs[2, j]), i]))
+         })
+         )
+  })
+  x <- do.call(cbind, x)
+  colnames(x) <- paste0("dtr", 1:nDTR)
+  rownames(x) <- apply(corPairs, 2, function(x) paste0(x, collapse = ""))
+  x
 }
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
@@ -681,7 +733,6 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
   as.matrix(numerator / denominator)
 }
 
-
 # Clean up output of combine.results, to be used in the foreach loop after
 # combining everything
 finalize.results <- function(x) {
@@ -692,13 +743,15 @@ finalize.results <- function(x) {
   rho.hat       <- mean(x$rho.hat, na.rm = T)
   coverage      <- as.numeric(x$coverage / x$valid)
   condVars      <- lapply(x$condVars, function(v) v / x$valid)
+  respCor       <- x$respCor / x$valid
   
   cat("Finishing...\n")
   
   result <- list("n" = x$n, "alpha" = x$alpha, "power.target" = x$power.target, "delta" = x$delta,
                  "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
                  "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var,
-                 "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars)
+                 "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars,
+                 "condVars" = condVars, "respCor" = respCor)
   
   if ("data" %in% names(x))
     result[["data"]] <- x$data
@@ -880,7 +933,60 @@ print.simResult <- function(sim) {
             "coverage =", sim$coverage, "\n"))
   cat(paste("marginal estimates:\nvariances =", paste0("(", paste(round(sim$sigma2.hat, 5), collapse = ", "), ")"),
             "correlation =", round(sim$rho.hat, 5), "\n"))
+  cat("estimate of correlation between response status and products of first-stage residuals:\n")
+  sim$respCor
 }
+
+response.beta <- function(d, gammas, r1, r0, respDirection = NULL) {
+  shape1 <- r1 / (1 - r1)
+  shape0 <- r0 / (1 - r0)
+  x <- pnorm(d$Y1, mean = gammas[1] + gammas[2] + gammas[3]*d$A1, sd = sigma)
+  respProb <- vector("numeric", nrow(d))
+  respProb[d$A1 ==  1] <- qbeta(x[d$A1 ==  1], shape1 = shape1, shape2 = 1)
+  respProb[d$A1 == -1] <- qbeta(x[d$A1 == -1], shape1 = shape0, shape2 = 1)
+  d$respProb <- respProb
+  d$R <- sapply(1:nrow(d), function(i) rbinom(1, 1, respProb[i]))
+  d
+}
+
+response.oneT <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
+  respDirection <- match.arg(respDirection)
+  tail <- switch(respDirection, "high" = F, "low" = T)
+  upsilon <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
+  d$R <- as.numeric(d$Y1 >= upsilon)
+  r0temp <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
+  if (r0temp != r0) {
+    warning(paste("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.",
+                  "The provided value is", r0, "and the new value is", round(r0temp, 3)))
+    r0 <- r0temp
+  }
+  d
+}
+
+response.sq <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
+  upsilon1 <- qnorm(r1/2, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma)
+  upsilon1 <- qnorm(r0/2, as.numeric(c(c(1, 1, -1), rep(0, 4)) %*% gammas), sigma)
+  respDirection <- match.arg(respDirection)
+  if (respDirection == "high") {
+    d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1 | d$Y1[d$A1 ==  1] <= -upsilon1)
+    d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0 | d$Y1[d$A1 == -1] <= -upsilon0)
+  } else {
+    d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= -upsilon1 & d$Y1[d$A1 ==  1] <= upsilon1)
+    d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= -upsilon0 & d$Y1[d$A1 == -1] <= upsilon0)
+  }
+  d
+}
+
+response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
+  respDirection <- match.arg(respDirection)
+  tail <- switch(respDirection, "high" = F, "low" = T)
+  upsilon1 <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
+  upsilon0 <- qnorm(r0, as.numeric(c(c(1, 1, -1), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
+  d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1)
+  d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0)
+  d
+}
+
 
 #' Compile sim results into a LaTeX-ready table
 #'
@@ -890,7 +996,7 @@ print.simResult <- function(sim) {
 #' @export
 #'
 #' @examples
-resultTable <- function(results, alternative = c("two.sided", "less", "greater")) {
+resultTable <- function(results, alternative = c("two.sided", "less", "greater"), paper = FALSE) {
   alternative <- match.arg(alternative)
   
   d <- do.call("rbind", lapply(results, function(l) {
@@ -900,28 +1006,40 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
       pval.power <- binom.test(x = sum(l$pval <= l$alpha / 2, na.rm = T) + sum(l$pval >= 1 - l$alpha / 2, na.rm = T),
                                n = l$valid, p = l$power.target, alternative = alternative)$p.value
     }
-    data.frame("delta" = l$delta,
-               "rprob" = min(l$r0, l$r1),
-               "rho" = l$rho,
-               "rho.size" = ifelse(is.null(l$rho.size), l$rho, l$rho.size),
-               "sharp" = ifelse(l$sharp, "sharp", "cons."),
-               "n" = l$n,
-               "estPwr" = l$power,
-               "pval.power" = pval.power,
-               "coverage" = l$coverage,
-               "pval.coverage" = tryCatch(binom.test(x = l$coverage * l$valid,
-                                                     n = l$valid, p = .95, 
-                                                     alternative = "two.sided")$p.value,
-                                          error = function(e) NULL),
-               "nTrial" = l$niter,
-               "nValid" = l$valid
+    x <- data.frame("delta" = l$delta,
+                    "rprob" = min(l$r0, l$r1),
+                    "rho" = l$rho,
+                    "rho.size" = ifelse(is.null(l$rho.size), l$rho, l$rho.size),
+                    "sharp" = ifelse(l$sharp, "sharp", "cons."),
+                    "n" = l$n,
+                    "estPwr" = l$power,
+                    "pval.power" = pval.power,
+                    "coverage" = l$coverage,
+                    "pval.coverage" = tryCatch(binom.test(x = l$coverage * l$valid,
+                                                          n = l$valid, p = .95, 
+                                                          alternative = "two.sided")$p.value,
+                                               error = function(e) NULL),
+                    "corY0sq" = l$corY0sq,
+                    "corY1sq" = l$corY1sq,
+                    "corY0Y1" = l$corY0Y1,
+                    "nTrial" = l$niter,
+                    "nValid" = l$valid
     )
+    if (paper) cbind(d, l$design)
   }))
+  
+  # d <- d[order(d$delta, d$rprob, d$rho, d$sharp), ]
   
   colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}\\right\\}$", "$\\rho$",
                    "$\\rho_{\\text{size}}$",
                    "Formula", "$n$", "$1-\\hat{\\beta}$", "$p$ value", "Coverage",
-                   "$p$ value", "Num. Runs", "Valid Runs")
+                   "$p$ value", 
+                   "$\\cor(R,Y_0^2)$", "$\\cor(R,Y_1^2)$", "$\\cor(R,Y_0Y_1)$",
+                   "Num. Runs", "Valid Runs")
+  
+  if (paper) {
+    
+  }
   
   print(xtable(d, digits = c(1,1,1,1,1,1,0,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,

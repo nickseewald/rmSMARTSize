@@ -1,23 +1,23 @@
-# n:        number of participants in trial
-# gammas:   Parameters from marginal mean model
-# lambdas:  Parameters for response "offset" in conditional model
-# r:        Probability of response to first-stage treatment (assuming equal for both txts)
-# r1:       Probability of response to A1 = 1  (assuming not equal to r0; r must be NULL)
-# r0:       Probability of response to A1 = -1 (assuming not equal to r1; r must be NULL)
-# times:    Vector of times at which measurements are collected (currently limited to length three)
-# spltime:  Time (contained in times) at which re-randomization occurs
-# uneqsdDTR: list of vectors of (a1, a2R, a2NR) for DTR(s) which do not have the same variance as the others
-# sigma:    Marginal variance of Y (assumed constant over time and DTR)
-# sigma.r1: Conditional variance of Y for responders to treatment A1 = 1
-# sigma.r0: Conditional variance of Y for responders to treatment A1 = -1
-# corstr:   Character string, one of "identity", "exch"/"exchangeable", "unstr"/"unstructured", or "custom".
-#            This is the TRUE form of the within-person correlation structure
-#           Form of V to use in estimating equations.
-# rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to generate data 
-#            (assumed constant across DTRs)
+# simulateSMART.R
+# Copyright 2018 Nicholas J. Seewald
+#
+# This file is part of rmSMARTsize.
+# 
+# rmSMARTsize is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# rmSMARTsize is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
 
-#' Title
+#' Simulation wrapper for SMARTs with repeated-measures outcomes
 #'
 #' @param n 
 #' @param gammas 
@@ -59,6 +59,26 @@
 #' @export
 #'
 #' @examples
+ 
+# n:        number of participants in trial
+# gammas:   Parameters from marginal mean model
+# lambdas:  Parameters for response "offset" in conditional model
+# r:        Probability of response to first-stage treatment (assuming equal for both txts)
+# r1:       Probability of response to A1 = 1  (assuming not equal to r0; r must be NULL)
+# r0:       Probability of response to A1 = -1 (assuming not equal to r1; r must be NULL)
+# times:    Vector of times at which measurements are collected (currently limited to length three)
+# spltime:  Time (contained in times) at which re-randomization occurs
+# uneqsdDTR: list of vectors of (a1, a2R, a2NR) for DTR(s) which do not have the same variance as the others
+# sigma:    Marginal variance of Y (assumed constant over time and DTR)
+# sigma.r1: Conditional variance of Y for responders to treatment A1 = 1
+# sigma.r0: Conditional variance of Y for responders to treatment A1 = -1
+# corstr:   Character string, one of "identity", "exch"/"exchangeable", "unstr"/"unstructured", or "custom".
+#            This is the TRUE form of the within-person correlation structure
+#           Form of V to use in estimating equations.
+# rho:      If corstr is either "exch" or "exchangeable", the within-person correlation used to generate data 
+#            (assumed constant across DTRs)
+
+
 simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                           alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
                           r = NULL, r1 = r, r0 = r,
@@ -66,11 +86,15 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                           sigma, sigma.r1 = sigma, sigma.r0 = sigma,
                           corstr = c("identity", "exchangeable", "ar1"),
                           rho = NULL, rho.r1 = rho, rho.r0 = rho, rho.size = rho,
-                          L = NULL, varmats = NULL, respModel = c("independent", "oneThreshold", "twoThreshold", "beta"),
+                          L = NULL, varmats = NULL,
+                          respFunction = response.oneT,
+                          respDirection = c("high", "low"),
                           pool.time = TRUE, pool.dtr = TRUE,
                           niter = 5000, tol = 1e-8, maxiter.solver = 1000,
                           save.data = FALSE, empirical = FALSE, balanceRand = FALSE,
                           notify = FALSE, pbDevice = NULL, postIdentifier = NULL) {
+  
+  call <- match.call()
   
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) stop("You must provide either r or both r1 and r0.")
@@ -92,7 +116,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
     if (is.null(rho.size)) rho.size <- rho
   }
   
-  ## If design == 1, pool.dtr is impossible to satisfy in a generative model. Set it to false.'
+  ## If design == 1, pool.dtr is impossible to satisfy in a generative model. Set it to false.
   # if (design == 1) pool.dtr <- FALSE
   
   # If n is not provided, compute it from the other inputs
@@ -101,19 +125,6 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                      rho = rho.size, alpha = alpha, power = power,
                      design = design, round = round,
                      conservative = conservative)
-  
-  respModel <- match.arg(respModel)
-  
-  if (respModel == "oneThreshold") {
-    if (design != 2) stop("oneThreshold is not yet implemented for any design other than 2")
-    upsilon <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = F)
-    r0temp <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
-    if (r0temp != r0) {
-      warning(paste("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.",
-                    "The provided value is", r0, "and the new value is", r0))
-      r0 <- r0temp
-    }
-  }
   
   # Compute conditional variances
   # varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
@@ -127,7 +138,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   designText <- paste0("Design ", design,
                        ifelse(is.null(postIdentifier), NULL, postIdentifier),
                        "delta = ", delta, "\n",
-                       "response model = ", respModel, "\n",
+                       "response function = ", as.character(quote(respFunction)), "\n",
                        "true corstr = ", corstr, "(", rho, ")\n",
                        "sized for exchangeable(", rho.size, ")\n",
                        "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3), "\n",
@@ -150,10 +161,14 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
               
               d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
                                  corstr = corstr, rho, rho.r1, rho.r0, uneqsd = NULL, uneqsdDTR = NULL, varmats = varmats,
-                                 balanceRand = balanceRand, empirical = empirical, respModel = respModel)
+                                 balanceRand = balanceRand, empirical = empirical, respFunction = respFunction,
+                                 respDirection = respDirection)
+                                 # respModel = respModel)
+              nDTR <- switch(design, 8, 4, 3)
               if (d$valid == FALSE) {
                 ## If a non-valid trial has been generated (i.e., fewer than one observation per cell), return a "blank" result
                 result <- list("pval" = NA, "param.hat" = rep(NA, length(gammas)), 
+                               "respCor" <- matrix(0, ncol = sum(times <= spltime), nrow = nDTR),
                                "param.var" = matrix(0, ncol = length(gammas), nrow = length(gammas)),
                                "sigma2.hat" = matrix(ncol = (length(times) * (1 - pool.time) * pool.dtr) +
                                                        4 * (1 - pool.dtr) +
@@ -173,7 +188,15 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                               times = times, direction = "long", v.names = "Y")
                 d1 <- d1[order(d1$id, d1$time), ]
                 
-                param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime, design, rep(0, length(gammas)), maxiter.solver, tol)
+                respCor <- estimate.respCor(d$data, design, times, spltime, gammas)
+                
+                param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime,
+                                             design, rep(0, length(gammas)), maxiter.solver, tol)
+                
+                # param.hat2 <- multiroot(esteqn.compute, start = rep(0, 7),
+                #                         jacfunc = esteqn.jacobian,
+                #                         d = d1, V = diag(rep(1, length(times))), 
+                #                                      times = times, spltime = spltime, design = 2)
                 
                 sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                               pool.time = pool.time, pool.dtr = pool.dtr)
@@ -221,6 +244,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 
                 result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
                                "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
+                               "respCor" = respCor,
                                "iter" = iter, "condVars" = condVars)
                 if (save.data) {
                   result[["data"]] <- list(d$data)
@@ -229,7 +253,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
               }
             }
   
-  results <- c(list("n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
+  results <- c(list("call" = call, "n" = n, "alpha" = alpha, "power.target" = power, "delta" = delta,
                     "corstr" = corstr, "rho" = rho, "rho.r0" = rho.r0, "rho.r1" = rho.r1,
                     "rho.size" = rho.size,
                     "sigma" = sigma, "sigma.r0" = sigma.r0, "sigma.r1" = sigma.r1,
