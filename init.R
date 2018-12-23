@@ -9,46 +9,45 @@ library(doRNG)
 library(slackr)
 library(xtable)
 library(here)
+# init.R
+# Copyright 2018 Nicholas J. Seewald
+#
+# This file is part of rmSMARTsize.
+# 
+# rmSMARTsize is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# rmSMARTsize is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
 source(here("functions.R"))
 source(here("generateSMART.R"))
 source(here("simulateSMART.R"))
 
+# Configuration for slackr notifications -- replace with appropriate .dcf file
 slackrSetup(config_file = here("njssimsslack.dcf"))
 
 
 ### CLUSTER SETUP ###
-# Check for Flux and create cluster appropriately
-if (Sys.info()["sysname"] != "Windows") {
+# Check for Rmpi and create cluster appropriately
+if (is.loaded("mpi_initialize")) {
   clus <- startMPIcluster()
 } else {
   ncore <- detectCores()
   clus <- makeCluster(ncore)
 }
 
-# Set up cluster for parallel computation
-
-# clusterExport(clus, varlist = "wd")
-# clusterEvalQ(clus, {
-#   library(MASS)
-#   library(doParallel)
-#   library(doRNG)
-#   library(slackr)
-#   library(xtable)
-#   
-#   source(paste0(wd, "/functions.R"), echo = F)
-#   source(paste0(wd, "/generateSMART.R"), echo = F)
-#   source(paste0(wd, "/simulateSMART.R"), echo = F)
-# })
-
-if (Sys.info()["sysname"] != "Windows") {
+if (is.loaded("mpi_initialize")) {
   registerDoMPI(clus)
-} else {
-  registerDoParallel(clus)
-}
-
-if (Sys.info()["sysname"] != "Windows") {
   nWorkers <- clus$workerCount
 } else {
+  registerDoParallel(clus)
   nWorkers <- length(clus)
 }
