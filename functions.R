@@ -32,10 +32,11 @@ combine.results <- function(list1, list2) {
   condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                     list1$condVars, list2$condVars)
   respCor    <- list1$respCor + list2$respCor
+  condCov    <- list1$condCov + list2$condCov
   
   result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
                  "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-                 "condVars" = condVars, "respCor" = respCor)
+                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov)
   
   if ("data" %in% names(list1)) {
     dataList <- c(list1$data, list2$data)
@@ -496,6 +497,29 @@ esteqn.jacobian <- function(d, V, times, spltime, design) {
   })) / -length(unique(d$id))
 }
 
+estimate.condCov <- function(d, times, spltime, design, pool.dtr = F) {
+  nDTR <- switch(design, 8, 4, 3)
+  
+  stage1times <- times[times <= spltime]
+  stage2times <- times[times > spltime]
+  m <- expand.grid("stage1" = stage1times, "stage2" = stage2times)
+  x <- lapply(1:nDTR, function(j) {
+    condCov <- matrix(rep(NA, length = nrow(m) * 2), nrow = 2,
+                      dimnames = list(apply(m, 1, function(x) paste(x, collapse = "")), c("NR", "R")))
+    for (i in 1:nrow(m)) {
+      condCov[i, 1] <- with(d[d$R == 0 & d[[paste0("dtr", j)]] == 1, ],
+                            cov(Y[time == m$stage1[i]], Y[time == m$stage2[i]]))
+      condCov[i, 2] <- with(d[d$R == 1 & d[[paste0("dtr", j)]] == 1, ],
+                            cov(Y[time == m$stage1[i]], Y[time == m$stage2[i]]))
+    }
+    condCov
+  })
+  if (pool.dtr) 
+    Reduce("+", x) / nDTR
+  else 
+    x
+}
+
 estimate.params <- function(d, V, times, spltime, design, start, maxiter.solver, tol) {
   nDTR <- switch(design, 8, 4, 3)
   
@@ -534,8 +558,6 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
 
 estimate.respCor <- function(d, design, times, spltime, gammas) {
   # if (class(d) != "SMART")
-  nDTR <- switch(design, 8, 4, 3)
-  dtrs <- dtrIndex(design)
   
   # Get all distinct pairs of times in stage 1
   corPairs <- combn(times[times <= spltime], 2)
@@ -546,22 +568,20 @@ estimate.respCor <- function(d, design, times, spltime, gammas) {
   # sort corPairs by time
   corPairs <- corPairs[, order(corPairs[1, ], corPairs[2, ])]
   
-  # Get means for each DTR at each time
-  ## DTRs are columns, times are rows
-  m <- meanvec(times, spltime, 2, gammas)
-  
-  x <- lapply(1:nDTR, function(i) {
+  x <- lapply(unique(d$A1), function(a1) {
     # subset data to only look at those consistent with one DTR at a time
-    with(d[d[[paste0("dtr", i)]] == 1, ],
+    with(d[d$A1 == a1, ],
          # loop over columns of corPairs
          sapply(1:ncol(corPairs), function(j) {
-           cor(R, (get(paste0("Y", corPairs[1, j])) - m[which(times == corPairs[1, j]), i]) * 
-                 (get(paste0("Y", corPairs[2, j])) - m[which(times == corPairs[2, j]), i]))
+           cor(R, (get(paste0("Y", corPairs[1, j])) - 
+                     marginal.model(a1, 0, 0, corPairs[1, j], spltime, design, gammas)) * 
+                 (get(paste0("Y", corPairs[2, j])) - 
+                    marginal.model(a1, 0, 0, corPairs[2, j], spltime, design, gammas)))
          })
          )
   })
   x <- do.call(cbind, x)
-  colnames(x) <- paste0("dtr", 1:nDTR)
+  colnames(x) <- unique(d$A1)
   rownames(x) <- apply(corPairs, 2, function(x) paste0(x, collapse = ""))
   x
 }
@@ -744,6 +764,7 @@ finalize.results <- function(x) {
   coverage      <- as.numeric(x$coverage / x$valid)
   condVars      <- lapply(x$condVars, function(v) v / x$valid)
   respCor       <- x$respCor / x$valid
+  condCov       <- x$condCov / x$valid
   
   cat("Finishing...\n")
   
@@ -751,7 +772,7 @@ finalize.results <- function(x) {
                  "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
                  "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var,
                  "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars,
-                 "condVars" = condVars, "respCor" = respCor)
+                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov)
   
   if ("data" %in% names(x))
     result[["data"]] <- x$data
@@ -922,69 +943,122 @@ mod.derivs <- function(times, spltime, design) {
 }
 
 print.simResult <- function(sim) {
-  cat("\tSimulation Results\n")
-  cat(paste("input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
+  cat("\tSimulation Results\n\n")
+  cat("Call:\n")
+  print(sim$call)
+  cat("\n\n")
+  cat(paste("Input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
   cat(paste("effect size =", sim$delta, "\nr0 =", sim$r0, "r1 =", sim$r1, "rho = ", sim$rho, "\n"))
-  cat("power results:\n")
+  cat("\nPower results:\n")
   fp <- format.pval(sim$pval.power, digits = max(1L, getOption('digits') - 3L))
   cat(paste("target power =", sim$power.target, "estimated power =", sim$power, "p-value",
             ifelse(substr(fp, 1L, 1L) == "<", fp, paste("=", fp)), "\n"))
-  cat(paste("parameter estimates:\nmodel parameters =", paste0("(", paste(round(sim$param.hat, 5), collapse = ", "), ")"),
+  cat(paste("\nParameter estimates:\nmodel parameters =", paste0("(", paste(round(sim$param.hat, 5), collapse = ", "), ")"),
             "coverage =", sim$coverage, "\n"))
-  cat(paste("marginal estimates:\nvariances =", paste0("(", paste(round(sim$sigma2.hat, 5), collapse = ", "), ")"),
+  cat(paste("\nMarginal estimates:\nvariances =", paste0("(", paste(round(sim$sigma2.hat, 5), collapse = ", "), ")"),
             "correlation =", round(sim$rho.hat, 5), "\n"))
-  cat("estimate of correlation between response status and products of first-stage residuals:\n")
-  sim$respCor
+  cat("\nEstimate of correlation between response status and products of first-stage residuals:\n")
+  print(sim$respCor)
+  cat("\n\nEstimate of covariance between t_i>=t* and t_j<t* among responders and non-responders:\n")
+  sim$condCov
 }
 
-response.beta <- function(d, gammas, r1, r0, respDirection = NULL) {
+response.beta <- function(d, gammas, r1, r0, respDirection = NULL, sigma, causal = F) {
   shape1 <- r1 / (1 - r1)
   shape0 <- r0 / (1 - r0)
   x <- pnorm(d$Y1, mean = gammas[1] + gammas[2] + gammas[3]*d$A1, sd = sigma)
   respProb <- vector("numeric", nrow(d))
+  
+  
+  
   respProb[d$A1 ==  1] <- qbeta(x[d$A1 ==  1], shape1 = shape1, shape2 = 1)
   respProb[d$A1 == -1] <- qbeta(x[d$A1 == -1], shape1 = shape0, shape2 = 1)
   d$respProb <- respProb
   d$R <- sapply(1:nrow(d), function(i) rbinom(1, 1, respProb[i]))
-  d
+  
+  return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-response.oneT <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
+response.indep <- function(d, gammas, r1, r0, respDirection = NULL, causal = F) {
+  if (causal) {
+    d$R.1 <- rbinom(nrow(d), 1, r1)
+    d$R.0 <- rbinom(nrow(d), 1, r0)
+  } else{
+    d$R <- NA
+    d$R[d$A1 ==  1] <- rbinom(sum(d$A1 ==  1), 1, r1)
+    d$R[d$A1 == -1] <- rbinom(sum(d$A1 == -1), 1, r0)
+  }
+  return(list("data" = d, "r1" = r1, "r0" = r0))
+}
+
+response.oneT <- function(d, gammas, r1, r0, respDirection = c("high", "low"), sigma, causal = F) {
   respDirection <- match.arg(respDirection)
   tail <- switch(respDirection, "high" = F, "low" = T)
-  upsilon <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
-  d$R <- as.numeric(d$Y1 >= upsilon)
-  r0temp <- pnorm(upsilon, sum(gammas[1:2] - gammas[3]), sigma, lower.tail = FALSE)
+  
+  upsilon <- qnorm(r1, as.numeric(sum(gammas[1:3])), sigma, lower.tail = tail)
+  if (causal) {
+    d$R.0 <- as.numeric(d$Y1.0 >= upsilon)
+    d$R.1 <- as.numeric(d$Y1.1 >= upsilon)
+  } else {
+    d$R <- as.numeric(d$Y1 >= upsilon)
+  }
+  r0temp <- pnorm(upsilon, sum(gammas[1:2]) - gammas[3], sigma, lower.tail = FALSE)
   if (r0temp != r0) {
     warning(paste("Overwriting the provided value of r0 to accomodate the oneThreshold respModel.",
-                  "The provided value is", r0, "and the new value is", round(r0temp, 3)))
+                  "The provided value is", round(r0, 3), "and the new value is", round(r0temp, 3)))
     r0 <- r0temp
   }
-  d
+  return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-response.sq <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
-  upsilon1 <- qnorm(r1/2, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma)
-  upsilon1 <- qnorm(r0/2, as.numeric(c(c(1, 1, -1), rep(0, 4)) %*% gammas), sigma)
+response.sq <- function(d, gammas, r1, r0, respDirection = c("high", "low"), sigma, causal = F) {
   respDirection <- match.arg(respDirection)
-  if (respDirection == "high") {
-    d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1 | d$Y1[d$A1 ==  1] <= -upsilon1)
-    d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0 | d$Y1[d$A1 == -1] <= -upsilon0)
+  
+  upsilon1.up   <- qnorm(r1/2, sum(gammas[1:3]),             sigma, lower.tail = F)
+  upsilon0.up   <- qnorm(r0/2, sum(gammas[1:2]) - gammas[3], sigma, lower.tail = F)
+  upsilon1.down <- qnorm(r1/2, sum(gammas[1:3]),             sigma)
+  upsilon0.down <- qnorm(r0/2, sum(gammas[1:2]) - gammas[3], sigma)
+  
+  if (causal) {
+    d$R.1 <- d$R.0 <- NA
+    if (respDirection == "high") {
+      d$R.1 <- as.numeric(d$Y1.1 >= upsilon1.up | d$Y1.1 <= upsilon1.down)
+      d$R.0 <- as.numeric(d$Y1.0 >= upsilon0.up | d$Y1.0 <= upsilon0.down)
+    } else {
+      d$R.1 <- as.numeric(d$Y1.1 >= -upsilon1.down & d$Y1.1 <= upsilon1.up)
+      d$R.0 <- as.numeric(d$Y1.0 >= -upsilon0.down & d$Y1.0 <= upsilon0.up)
+    }
   } else {
-    d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= -upsilon1 & d$Y1[d$A1 ==  1] <= upsilon1)
-    d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= -upsilon0 & d$Y1[d$A1 == -1] <= upsilon0)
+    d$R <- NA
+    if (respDirection == "high") {
+      d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1.up | d$Y1[d$A1 ==  1] <= upsilon1.down)
+      d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0.up | d$Y1[d$A1 == -1] <= upsilon0.down)
+    } else {
+      d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= -upsilon1.down & d$Y1[d$A1 ==  1] <= upsilon1.up)
+      d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= -upsilon0.down & d$Y1[d$A1 == -1] <= upsilon0.up)
+    }
   }
-  d
+  return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low")) {
+response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"), sigma, causal = F) {
   respDirection <- match.arg(respDirection)
   tail <- switch(respDirection, "high" = F, "low" = T)
-  upsilon1 <- qnorm(r1, as.numeric(c(rep(1, 3), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
-  upsilon0 <- qnorm(r0, as.numeric(c(c(1, 1, -1), rep(0, 4)) %*% gammas), sigma, lower.tail = tail)
-  d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1)
-  d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0)
-  d
+  
+  upsilon1 <- qnorm(r1, sum(gammas[1:3]),             sigma, lower.tail = tail)
+  upsilon0 <- qnorm(r0, sum(gammas[1:2]) - gammas[3], sigma, lower.tail = tail)
+  
+  if (causal) {
+    d$R.1 <- d$R.0 <- NA
+    d$R.1 <- as.numeric(d$Y1.1 >= upsilon1)
+    d$R.0 <- as.numeric(d$Y1.0 >= upsilon0)
+  } else {
+    d$R <- NA
+    d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1)
+    d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0)
+  }
+  
+  return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
 
@@ -1006,6 +1080,9 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
       pval.power <- binom.test(x = sum(l$pval <= l$alpha / 2, na.rm = T) + sum(l$pval >= 1 - l$alpha / 2, na.rm = T),
                                n = l$valid, p = l$power.target, alternative = alternative)$p.value
     }
+    
+    respCor.mean <- apply(l$respCor, 1, function(x) x[which.max(abs(x))])
+    
     x <- data.frame("delta" = l$delta,
                     "rprob" = min(l$r0, l$r1),
                     "rho" = l$rho,
@@ -1019,16 +1096,18 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
                                                           n = l$valid, p = .95, 
                                                           alternative = "two.sided")$p.value,
                                                error = function(e) NULL),
-                    "corY0sq" = l$corY0sq,
-                    "corY1sq" = l$corY1sq,
-                    "corY0Y1" = l$corY0Y1,
+                    "corY0sq" = as.numeric(respCor.mean[1]),
+                    "corY1sq" = as.numeric(respCor.mean[3]),
+                    "corY0Y1" = as.numeric(respCor.mean[2]),
                     "nTrial" = l$niter,
                     "nValid" = l$valid
     )
-    if (paper) cbind(d, l$design)
+    # if (paper) cbind(d, l$design)
   }))
   
   # d <- d[order(d$delta, d$rprob, d$rho, d$sharp), ]
+  
+  oldColnames <- colnames(d)
   
   colnames(d) <- c("$\\delta$", "$\\min\\left\\{r_{-1},r_{1}\\right\\}$", "$\\rho$",
                    "$\\rho_{\\text{size}}$",
@@ -1041,10 +1120,13 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
     
   }
   
-  print(xtable(d, digits = c(1,1,1,1,1,1,0,3,3,3,3,0,0)),
+  print(xtable(d, digits = c(1,1,1,1,1,1,0,3,3,3,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,
         include.rownames = F,
         include.colnames = T)
+  
+  colnames(d) <- oldColnames
+  return(invisible(d))
 }
 
 sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
