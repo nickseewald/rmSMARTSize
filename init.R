@@ -1,15 +1,6 @@
-if(!is.loaded("mpi_initialize")) {
-  library(Rmpi)
-}
-
-library(MASS)
-library(doParallel)
-library(doMPI)
-library(doRNG)
-library(slackr)
-library(xtable)
-library(here)
 # init.R
+# Initialization of simulation environment
+#
 # Copyright 2018 Nicholas J. Seewald
 #
 # This file is part of rmSMARTsize.
@@ -27,6 +18,16 @@ library(here)
 # You should have received a copy of the GNU Affero General Public License
 # along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
+check.rmpi  <- require(Rmpi)
+check.dompi <- require(doMPI)
+
+require(MASS)
+library(doParallel)
+library(doRNG)
+library(slackr)
+library(xtable)
+library(here)
+
 source(here("functions.R"))
 source(here("generateSMART.R"))
 source(here("simulateSMART.R"))
@@ -37,14 +38,14 @@ slackrSetup(config_file = here("njssimsslack.dcf"))
 
 ### CLUSTER SETUP ###
 # Check for Rmpi and create cluster appropriately
-if (is.loaded("mpi_initialize")) {
+if (check.dompi) {
   clus <- startMPIcluster()
 } else {
   ncore <- detectCores()
   clus <- makeCluster(ncore)
 }
 
-if (is.loaded("mpi_initialize")) {
+if (check.dompi) {
   registerDoMPI(clus)
   nWorkers <- clus$workerCount
 } else {
