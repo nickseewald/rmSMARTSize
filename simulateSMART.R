@@ -135,10 +135,9 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   #                              gammas, lambdas)
   
   ## Construct string describing simulation parameters
-  designText <- paste0("Design ", design,
+  designText <- paste0("Design ", design, "\n",
                        ifelse(is.null(postIdentifier), NULL, postIdentifier),
                        "delta = ", delta, "\n",
-                       "response function = ", as.character(quote(respFunction)), "\n",
                        "true corstr = ", corstr, "(", rho, ")\n",
                        "sized for exchangeable(", rho.size, ")\n",
                        "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3), "\n",
@@ -188,7 +187,10 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                               times = times, direction = "long", v.names = "Y")
                 d1 <- d1[order(d1$id, d1$time), ]
                 
+                # Check working assumption re: correlation between response and products of residuals
                 respCor <- estimate.respCor(d$data, design, times, spltime, gammas)
+                
+                condCov <- estimate.condCov(d1, times, spltime, design, pool.dtr = T)
                 
                 param.hat <- estimate.params(d1, diag(rep(1, length(times))), times, spltime,
                                              design, rep(0, length(gammas)), maxiter.solver, tol)
@@ -244,7 +246,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 
                 result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
                                "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
-                               "respCor" = respCor,
+                               "respCor" = respCor, "condCov" = condCov,
                                "iter" = iter, "condVars" = condVars)
                 if (save.data) {
                   result[["data"]] <- list(d$data)
