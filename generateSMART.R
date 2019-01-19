@@ -196,15 +196,16 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     }
     
     ## Generate stage 1 potential outcomes
-    for (time in times[times > 0 & times <= spltime]) {
-      if (corstr %in% c("exchangeable", "identity")) {
-        d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-        d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-      } else if (corstr == "ar1") {
-        # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
-        d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-        d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-      }
+    if (corstr %in% c("exchangeable", "identity")) {
+      # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
+      d[, paste0("Y", times[times > 0 & times <= spltime], ".0")] <-
+        (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+      d[, paste0("Y", times[times > 0 & times <= spltime], ".1")] <-
+        (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    } else if (corstr == "ar1") {
+      # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
+      d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+      d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
     }
     
     ## Generate response status
@@ -216,11 +217,37 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     
     if (design == 1) {
       
-      d$Y2.111 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) +
-        rho/(1+rho) * (d$Y0 + d$Y1.1) + gammas[4] + gammas[5] + 
-        d$R.1 * (gammas[6] + gammas[8]) / r1 +
-        (1-d$R.1)*(gammas[7] + gammas[9])/(1-r1) +
+      d$Y2.111 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
+        gammas[4] + gammas[5] + d$R.1 * (gammas[6] + gammas[8]) / r1 + (1-d$R.1)*(gammas[7] + gammas[9])/(1-r1) +
         (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
+      
+      d$Y2.110 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
+        gammas[4] + gammas[5] + d$R.1 * (gammas[6] + gammas[8]) / r1 + (1-d$R.1)*(-gammas[7] - gammas[9])/(1-r1) +
+        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
+      
+      d$Y2.101 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
+        gammas[4] + gammas[5] + d$R.1 * (-gammas[6] - gammas[8]) / r1 + (1-d$R.1)*(gammas[7] + gammas[9])/(1-r1) +
+        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
+      
+      d$Y2.100 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
+        gammas[4] + gammas[5] + d$R.1 * (-gammas[6] - gammas[8]) / r1 + (1-d$R.1)*(-gammas[7] - gammas[9])/(1-r1) +
+        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
+      
+      d$Y2.011 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
+        gammas[4] - gammas[5] + d$R.0 * (gammas[6] - gammas[8]) / r0 + (1-d$R.0)*(gammas[7] - gammas[9])/(1-r0) +
+        (d$R.0 - r0) * (lambdas[1] - lambdas[2]) 
+      
+      d$Y2.010 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
+        gammas[4] - gammas[5] + d$R.0 * (gammas[6] - gammas[8]) / r0 + (1-d$R.0)*(-gammas[7] + gammas[9])/(1-r0) +
+        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
+      
+      d$Y2.001 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
+        gammas[4] - gammas[5] + d$R.0 * (-gammas[6] + gammas[8]) / r0 + (1-d$R.0)*(gammas[7] - gammas[9])/(1-r0) +
+        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
+      
+      d$Y2.000 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
+        gammas[4] - gammas[5] + d$R.0 * (-gammas[6] + gammas[8]) / r0 + (1-d$R.0)*(-gammas[7] + gammas[9])/(1-r0) +
+        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
       
       d$weight <- 4
       
@@ -332,9 +359,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     }
   }
   
-  
-  
-  
+  d.full <- d
+  d <- subset(d, select = c("id", "Y0", "A1", "Y1", "R", "A2R", "A2NR", "Y2", "weight", grep("dtr", names(d), value = T)))
   
   class(d) <- c("SMART", class(d))
   
