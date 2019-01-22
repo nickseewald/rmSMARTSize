@@ -249,6 +249,63 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
         gammas[4] - gammas[5] + d$R.0 * (-gammas[6] + gammas[8]) / r0 + (1-d$R.0)*(-gammas[7] + gammas[9])/(1-r0) +
         (d$R.0 - r0) * (lambdas[1] - lambdas[2])
       
+      ## Time 2 variances
+      
+      # Notation: 
+      ## v2.(stage1).(R/NR).(stage2 given response) refers to *residual* variance
+      ##  i.e., v2.1.R.1 is the additional variance needed for responders to A1=1 who are randomized to A2R=1
+      
+      v2.1.R.1   <- sigma.r1^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
+      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.111[R.1 == 1]) - mean(Y2.111[R.1 == 0]))^2) / (1 - r1))
+      v2.1.NR.1  <- sigma.nr11^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+      sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.n11^2 - r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - mean(Y2.101[R.1 == 0]))^2) / r1)
+      v2.1.R.0   <- sigma.r10^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
+      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r10^2 - r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) - mean(Y2.100[R.1 == 0]))^2) / (1 - r1))
+      v2.1.NR.0  <- sigma.nr10^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+      
+      v2.0.R.1   <- sigma.r0^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
+      sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.011[R.0 == 1]) - mean(Y2.011[R.0 == 0]))^2) / (1 - r0))
+      v2.0.NR.1  <- sigma.nr01^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+      sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.n01^2 - r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - mean(Y2.001[R.0 == 0]))^2) / r0)
+      v2.0.R.0   <- sigma.r00^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
+      sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r00^2 - r0*(1-r0) * with(d, mean(Y2.000[R.1 == 1]) - mean(Y2.000[R.1 == 0]))^2) / (1 - r0))
+      v2.0.NR.0  <- sigma.nr00^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+      
+      ## Add residuals at time 2
+      e2.1.R.1 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.1))
+      e2.1.R.0 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.0))
+      e2.0.R.1 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.1))
+      e2.0.R.0 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.0))
+      
+      e2.1.NR.1 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.1))
+      e2.1.NR.0 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.0))
+      e2.0.NR.1 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.1))
+      e2.0.NR.0 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.0))
+      
+      d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R.0
+      d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + e2.0.NR.0
+      
+      d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R.0
+      d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + e2.0.NR.1
+      
+      d$Y2.010[d$R.0 == 1] <- d$Y2.010[d$R.0 == 1] + e2.0.R.1
+      d$Y2.010[d$R.0 == 0] <- d$Y2.010[d$R.0 == 0] + e2.0.NR.0
+      
+      d$Y2.011[d$R.0 == 1] <- d$Y2.011[d$R.0 == 1] + e2.0.R.1
+      d$Y2.011[d$R.0 == 0] <- d$Y2.011[d$R.0 == 0] + e2.0.NR.1
+      
+      d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R.0
+      d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + e2.1.NR.0
+      
+      d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R.0
+      d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + e2.1.NR.1
+      
+      d$Y2.110[d$R.1 == 1] <- d$Y2.110[d$R.1 == 1] + e2.1.R.1
+      d$Y2.110[d$R.1 == 0] <- d$Y2.110[d$R.1 == 0] + e2.1.NR.0
+      
+      d$Y2.111[d$R.1 == 1] <- d$Y2.111[d$R.1 == 1] + e2.1.R.1
+      d$Y2.111[d$R.1 == 0] <- d$Y2.111[d$R.1 == 0] + e2.1.NR.1
+      
       d$weight <- 4
       
       d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
