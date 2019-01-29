@@ -29,6 +29,7 @@ library(xtable)
 library(here)
 
 source(here("functions.R"))
+source(here("generativeFunctions.R"))
 source(here("generateSMART.R"))
 source(here("simulateSMART.R"))
 
@@ -39,16 +40,19 @@ slackrSetup(config_file = here("njssimsslack.dcf"))
 ### CLUSTER SETUP ###
 # Check for Rmpi and create cluster appropriately
 if (check.dompi) {
-  clus <- startMPIcluster()
+  clus <- startMPIcluster(verbose = T)
 } else {
   ncore <- detectCores()
-  clus <- makeCluster(ncore)
+  clus <- makeCluster(ncore, outfile = "outFiles/log.txt")
 }
 
 if (check.dompi) {
+  Sys.sleep(15)
   registerDoMPI(clus)
+  Sys.sleep(15)
   nWorkers <- clus$workerCount
 } else {
   registerDoParallel(clus)
   nWorkers <- length(clus)
 }
+
