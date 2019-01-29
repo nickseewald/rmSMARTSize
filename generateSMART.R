@@ -55,7 +55,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
                           rho = NULL, rho.r1 = rho, rho.r0 = rho,
                           uneqsdDTR = NULL, uneqsd = NULL, varmats = NULL,
                           respDirection = NULL, respFunction,
-                          empirical = FALSE, causal = FALSE, old = FALSE) {
+                          empirical = FALSE, old = FALSE) {
+  
+  call <- match.call()
   
   ## Input Checks
   if (sum(times > spltime) == 0) stop("Currently spltime must be less than max(times)")
@@ -181,39 +183,15 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     #### UPDATED GENERATIVE MODEL ####
     
     ## Initialize data frame
-    d <- data.frame("id"   = 1:n)
-
-    ## Generate baseline outcome
-    d$Y0 <- gammas[1] + rnorm(n, 0, sigma)
-    
-    ## Generate observed treatment assignment
-    if (balanceRand) {
-      s <- sample(1:n, size = floor(n/2), replace = FALSE)
-      d$A1[s]  <- 1
-      d$A1[-s] <- -1
-    } else {
-      d$A1 <- 2 * rbinom(n, 1, 0.5) - 1
-    }
-    
-    ## Generate stage 1 potential outcomes
-    if (corstr %in% c("exchangeable", "identity")) {
-      # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
-      d[, paste0("Y", times[times > 0 & times <= spltime], ".0")] <-
-        (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-      d[, paste0("Y", times[times > 0 & times <= spltime], ".1")] <-
-        (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    } else if (corstr == "ar1") {
-      # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
-      d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-      d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    }
-    
-    ## Generate response status
-    d$R <- rep(NA, n)
-    resp <- respFunction(d, gammas, r1, r0, respDirection, sigma, causal = T)
-    d <- resp$data
-    r1 <- resp$r1
-    r0 <- resp$r0
+    d <- generateStage1(n = n, times = times, spltime = spltime, 
+                        r1 = r1, r0 = r0,
+                        gammas = gammas,
+                        sigma = sigma, corstr = corstr,
+                        rho = rho, 
+                        respFunction = respFunction,
+                        respDirection, 
+                        balanceRand,
+                        empirical)
     
     if (design == 1) {
       
@@ -251,6 +229,12 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       
       ## Time 2 variances
       
+      # Check variance assumption:
+      sigma.r1.LB <- sqrt(sigma^2 + ((1 - r1) / r1) * (mean(d$Y2.111[d$R.1 == 0]) - mean(d$Y2.111))^2 -
+                            (mean(d$Y2.111[d$R.1 == 1]) - mean(d$Y2.111[d$R.1 == 0]))^2)
+      sigma.r0.LB <- sqrt(sigma^2 + ((1 - r0) / r0) * (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
+                            (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2)
+      
       # Notation: 
       ## v2.(stage1).(R/NR).(stage2 given response) refers to *residual* variance
       ##  i.e., v2.1.R.1 is the additional variance needed for responders to A1=1 who are randomized to A2R=1
@@ -258,7 +242,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       v2.1.R.1   <- sigma.r1^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
       sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.111[R.1 == 1]) - mean(Y2.111[R.1 == 0]))^2) / (1 - r1))
       v2.1.NR.1  <- sigma.nr11^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.n11^2 - r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - mean(Y2.101[R.1 == 0]))^2) / r1)
+      sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.nr11^2 - r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - mean(Y2.101[R.1 == 0]))^2) / r1)
       v2.1.R.0   <- sigma.r10^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
       sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r10^2 - r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) - mean(Y2.100[R.1 == 0]))^2) / (1 - r1))
       v2.1.NR.0  <- sigma.nr10^2 - (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
@@ -266,7 +250,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       v2.0.R.1   <- sigma.r0^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
       sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.011[R.0 == 1]) - mean(Y2.011[R.0 == 0]))^2) / (1 - r0))
       v2.0.NR.1  <- sigma.nr01^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.n01^2 - r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - mean(Y2.001[R.0 == 0]))^2) / r0)
+      sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.nr01^2 - r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - mean(Y2.001[R.0 == 0]))^2) / r0)
       v2.0.R.0   <- sigma.r00^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
       sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r00^2 - r0*(1-r0) * with(d, mean(Y2.000[R.1 == 1]) - mean(Y2.000[R.1 == 0]))^2) / (1 - r0))
       v2.0.NR.0  <- sigma.nr00^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
@@ -306,6 +290,11 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       d$Y2.111[d$R.1 == 1] <- d$Y2.111[d$R.1 == 1] + e2.1.R.1
       d$Y2.111[d$R.1 == 0] <- d$Y2.111[d$R.1 == 0] + e2.1.NR.1
       
+      # Second-stage randomization
+      d$A2NR <- d$A2R  <- 0
+      d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
+      d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+      
       d$weight <- 4
       
       d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
@@ -339,6 +328,19 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       
       ## Time 2 variances
       
+      # Check variance assumption:
+      sigma.r1.LB <- sqrt(sigma^2 + ((1 - r1) / r1) * (mean(d$Y2.11[d$R.1 == 0]) - mean(d$Y2.11))^2 -
+                            (mean(d$Y2.11[d$R.1 == 1]) - mean(d$Y2.11[d$R.1 == 0]))^2)
+      sigma.r0.LB <- sqrt(sigma^2 + ((1 - r0) / r0) * (mean(d$Y2.00[d$R.0 == 0]) - mean(d$Y2.00))^2 -
+                            (mean(d$Y2.00[d$R.0 == 1]) - mean(d$Y2.00[d$R.0 == 0]))^2)
+      
+      if (sigma.r1.LB > sigma.r1 | sigma.r0.LB > sigma.r0) {
+        message("Conditional variation working assumption violated.")
+        condVarAssump <- 1
+      } else {
+        condVarAssump <- 0
+      }
+      
       sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.00[R.0 == 1]) - mean(Y2.00[R.0 == 0]))^2) / (1 - r0))
       sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.01[R.0 == 1]) - mean(Y2.01[R.0 == 0]))^2) / (1 - r0))
       sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.10[R.1 == 1]) - mean(Y2.10[R.1 == 0]))^2) / (1 - r1))
@@ -369,15 +371,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       d$Y2.11[d$R.1 == 1] <- d$Y2.11[d$R.1 == 1] + e2.1.R
       d$Y2.11[d$R.1 == 0] <- d$Y2.11[d$R.1 == 0] + rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.1))
       
-      # Select potential Y1 value to observe based on randomization
-      d$Y1 <- NA
-      d$Y1[d$A1 == 1]  <- d$Y1.1[d$A1 == 1]
-      d$Y1[d$A1 == -1] <- d$Y1.0[d$A1 == -1]
-      
-      # Select potential R value to observe based on randomization
-      d$R <- NA
-      d$R[d$A1 == 1]  <- d$R.1[d$A1 == 1]
-      d$R[d$A1 == -1] <- d$R.0[d$A1 == -1]
+     
       
       # Randomize stage 2
       d$A2R <- 0
@@ -416,16 +410,27 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     }
   }
   
+  d <- d[order(d$id), ]
+  rownames(d) <- 1:n
   d.full <- d
-  d <- subset(d, select = c("id", "Y0", "A1", "Y1", "R", "A2R", "A2NR", "Y2", "weight", grep("dtr", names(d), value = T)))
+  d <- subset(d, select = c("id", "Y0", "A1", "Y1", "R", "A2R",
+                            "A2NR", "Y2", "weight",
+                            grep("dtr", names(d), value = T)))
   
   class(d) <- c("SMART", class(d))
   
   # Check validity of treatment allocations
   if (!validTrial(d, design)) {
-    return(list("data" = d, "valid" = F, "times" = times, "spltime" = spltime))
+    return(list("data" = d,  "valid" = F, 
+                "params" = list("times" = times, "spltime" = spltime, "r1" = r1, "r0" = r0,
+                                "gammas" = gammas, "lambdas" = lambdas, "design" = design),
+                "assumptions" = list("conditionalVariance" = NULL)))
   }
-  d <- d[order(d$id), ]
-  rownames(d) <- 1:n
-  return(list("data" = d, "valid" = T, "times" = times, "spltime" = spltime))
+  
+  output <- list("data" = d, "potentialData" = d.full, "valid" = T, 
+                 "params" = list("times" = times, "spltime" = spltime, "r1" = r1, "r0" = r0,
+                                 "gammas" = gammas, "lambdas" = lambdas, "design" = design),
+                 "assumptions" = list("conditionalVariance" = condVarAssump))
+  class(output) <- c('generateSMART', class(output))
+  return(output)
 }

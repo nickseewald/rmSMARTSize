@@ -28,7 +28,7 @@
 #' @param power 
 #' @param delta 
 #' @param design 
-#' @param round 
+#' @param rounding
 #' @param conservative 
 #' @param r 
 #' @param r1 
@@ -80,7 +80,8 @@
 
 
 simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
-                          alpha = .05, power = .8, delta, design = 2, round = "up", conservative = TRUE,
+                          alpha = .05, power = .8, delta, design = 2, rounding = "up",
+                          conservative = TRUE,
                           r = NULL, r1 = r, r0 = r,
                           uneqsdDTR = NULL, uneqsd = NULL, 
                           sigma, sigma.r1 = sigma, sigma.r0 = sigma,
@@ -120,11 +121,12 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   # if (design == 1) pool.dtr <- FALSE
   
   # If n is not provided, compute it from the other inputs
-  if (is.null(n)) 
-    n <- sample.size(delta = delta, r = ifelse(is.null(r), min(r0, r1), r),
+  if (is.null(n)) {
+    n <- sample.size(delta = delta, r = r, r1 = r1, r0 = r0,
                      rho = rho.size, alpha = alpha, power = power,
-                     design = design, round = round,
+                     design = design, rounding = rounding,
                      conservative = conservative)
+  }
   
   # Compute conditional variances
   # varmats <- conditionalVarmat(times, spltime, design, r1, r0, 
@@ -155,7 +157,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   results <-
     foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
             .export = ls(envir = .GlobalEnv), .packages = c("MASS", "xtable", "slackr"),
-            .verbose = FALSE, .errorhandling = "stop", .multicombine = FALSE,
+            .verbose = FALSE, .errorhandling = "remove", .multicombine = FALSE,
             .inorder = FALSE) %dorng% { 
               
               d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, design = design, sigma, sigma.r1, sigma.r0,
@@ -176,8 +178,11 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                                                (4 * (1 - pool.dtr) * pool.time) +
                                                                (pool.time * pool.dtr))),
                                "rho.hat" = NA, "valid" = 0, "coverage" = 0, "iter" = NULL,
-                               "condVars" = lapply(1:length(dtrIndex(design)$a1), function(x) matrix(0, ncol = length(times), nrow = length(times))),
-                               "alpha" = alpha, "power.target" = power)
+                               "condVars" = lapply(1:length(dtrIndex(design)$a1), 
+                                                   function(x) matrix(0, ncol = length(times), nrow = length(times))),
+                               "respCor" = matrix(rep(0, combn(times[times <= spltime], 2) * 2), ncol = 2),
+                               "condCov" = matrix(rep(0, nrow(expand.grid(times[times <= spltime], times[times > spltime])) * 2), ncol = 2)
+                               )
                 # if (save.data) {
                 #   result[["data"]] <- list(d$data)
                 # }
@@ -203,7 +208,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 sigma2.hat <- estimate.sigma2(d1, times, spltime, design, param.hat,
                                               pool.time = pool.time, pool.dtr = pool.dtr)
                 
-                rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat), param.hat, corstr = "exchangeable")
+                rho.hat <- estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat),
+                                        param.hat, corstr = "exchangeable")
                 
                 # Compute variance matrices for all conditional cells
                 condVars <- lapply(split.SMART(d$data), function(x) {
@@ -247,7 +253,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 result <- list("pval" = pval, "param.hat" = t(param.hat), "param.var" = param.var,
                                "sigma2.hat" = sigma2.hat, "rho.hat" = rho.hat, "valid" = 1, "coverage" = coverage,
                                "respCor" = respCor, "condCov" = condCov,
-                               "iter" = iter, "condVars" = condVars)
+                               "iter" = iter, "condVars" = condVars,
+                               "assumptionViolations" = d$assumptions)
                 if (save.data) {
                   result[["data"]] <- list(d$data)
                 }
