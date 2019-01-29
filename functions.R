@@ -17,6 +17,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
+### Check assumptions in generative model
+checkSMART <- function(smart) {
+  # Argument 'smart' must be of class 'generateSMART'
+  if (!("generateSMART" %in% class(smart))) stop("Argument 'smart' must be of class 'generateSMART'")
+  
+  # 1. Check response correlation
+  respCor <- estimate.respCor(smart$data, smart$params$design, smart$params$time,
+                              smart$params$spltime, smart$params$gammas)
+  
+  # 2. Check 
+}
+
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
   pval       <- c(list1$pval, list2$pval)
@@ -31,8 +43,10 @@ combine.results <- function(list1, list2) {
   valid      <- list1$valid + list2$valid
   condVars   <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                     list1$condVars, list2$condVars)
-  respCor    <- list1$respCor + list2$respCor
-  condCov    <- list1$condCov + list2$condCov
+  respCor    <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                       list(list1$respCor, list2$respCor))
+  condCov    <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                       list(list1$condCov, list2$condCov))
   
   result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
                  "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
@@ -44,6 +58,10 @@ combine.results <- function(list1, list2) {
   }
   
   return(result)
+}
+
+compute.effectSize <- function(gammas, sigma, design, L) {
+  
 }
 
 conditionalIndex <- function(design) {
@@ -556,8 +574,9 @@ estimate.paramvar <- function(d, V, times, spltime, design, gammas) {
   solve(-J) %*%  meat.compute(d, V, times, spltime, design, gammas) %*% solve(-J) / n
 }
 
-estimate.respCor <- function(d, design, times, spltime, gammas) {
-  # if (class(d) != "SMART")
+estimate.respCor <- function(d, design, times, spltime, gammas, causal = F) {
+  # Input is WIDE DATA
+  if (!("SMART" %in% class(d))) stop("'d' must be of class 'SMART'")
   
   # Get all distinct pairs of times in stage 1
   corPairs <- combn(times[times <= spltime], 2)
@@ -599,21 +618,20 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   mvec <- meanvec(times, spltime, design, gammas)
   Dmat <- mod.derivs(times, spltime, design)
   
-  sigma <- as.matrix(sigma)
+  sigma <- reshapeSigma(sigma, times, design)
   
-  # Restructure sigma to a length(times)-by-nDTR matrix
-  if (sum(rownames(sigma) == times) == length(times) & ncol(sigma) != nDTR) {
-    sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
-  } else if (sum(grepl("dtr", rownames(sigma))) != 0) {
-    sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times)))
-  } else if (nrow(sigma) == ncol(sigma) & ncol(sigma) == 1) {
-    sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = nDTR)
-  } else if (nrow(sigma) == length(times) & ncol(sigma) == 1) {
-    sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
-  }
+  # if (sum(rownames(sigma) == times) == length(times) & ncol(sigma) != nDTR) {
+  #   sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
+  # } else if (sum(grepl("dtr", rownames(sigma))) != 0) {
+  #   sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times)))
+  # } else if (nrow(sigma) == ncol(sigma) & ncol(sigma) == 1) {
+  #   sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = nDTR)
+  # } else if (nrow(sigma) == length(times) & ncol(sigma) == 1) {
+  #   sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
+  # }
   
   colnames(sigma) <- paste0("dtr", 1:nDTR)
-  rownames(sigma) <- times
+  rownames(sigma) <- paste0("time", times)
   
   # Compute residuals (Y_{it} - mu_{t}(a1, a2))
   resids <- matrix(rep(d$Y, nDTR), ncol = nDTR) -
@@ -942,39 +960,78 @@ mod.derivs <- function(times, spltime, design) {
     dmat
 }
 
-print.simResult <- function(sim) {
+print.simResult <- function(sim, quote = FALSE) {
+  # NOTE: 'quote=FALSE' is provided ONLY for compatibility with slackr. 
+  # The argument can be safely ignored.
+  
   cat("\tSimulation Results\n\n")
-  cat("Call:\n")
-  print(sim$call)
-  cat("\n\n")
-  cat(paste("Input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter, "number of valid trials = ", sim$valid, "\n"))
+  # cat("Call:\n")
+  # print(sim$call)
+  # cat("\n\n")
+  cat(paste("Input summary:\nnumber of participants =", sim$n, "number of trials = ", sim$niter,
+            "number of valid trials = ", sim$valid, "\n"))
   cat(paste("effect size =", sim$delta, "\nr0 =", sim$r0, "r1 =", sim$r1, "rho = ", sim$rho, "\n"))
   cat("\nPower results:\n")
   fp <- format.pval(sim$pval.power, digits = max(1L, getOption('digits') - 3L))
-  cat(paste("target power =", sim$power.target, "estimated power =", sim$power, "p-value",
-            ifelse(substr(fp, 1L, 1L) == "<", fp, paste("=", fp)), "\n"))
+  cat(paste("target power =", sim$power.target,
+            "estimated power =", round(sim$power, max(1L, getOption('digits') - 3L)),
+            "p-value", ifelse(substr(fp, 1L, 1L) == "<", fp, paste("=", fp)), "\n"))
   cat(paste("\nParameter estimates:\nmodel parameters =", paste0("(", paste(round(sim$param.hat, 5), collapse = ", "), ")"),
-            "coverage =", sim$coverage, "\n"))
+            "coverage =", round(sim$coverage, max(1L, getOption('digits') - 3L)), "\n"))
   cat(paste("\nMarginal estimates:\nvariances =", paste0("(", paste(round(sim$sigma2.hat, 5), collapse = ", "), ")"),
             "correlation =", round(sim$rho.hat, 5), "\n"))
   cat("\nEstimate of correlation between response status and products of first-stage residuals:\n")
   print(sim$respCor)
   cat("\n\nEstimate of covariance between t_i>=t* and t_j<t* among responders and non-responders:\n")
-  sim$condCov
+  print(sim$condCov)
+}
+
+reshapeSigma <- function(sigma, times, design) {
+  nDTR <- switch(design, 8, 4, 3)
+  
+  sigma <- as.matrix(sigma)
+  
+  # Restructure sigma to a length(times)-by-nDTR matrix
+  if (sum(dim(sigma) == c(1, 1)) == 2) {
+    # scalar case
+    sigma <- matrix(rep(sigma, length(times) * nDTR), nrow = length(times))
+  } else if (nrow(sigma) == length(times) & 
+             length(grep("time", rownames(sigma))) == length(times) & 
+             ncol(sigma) == 1) {
+    # case in which there is one row per time (i.e., pool.time = F, pool.dtr = T)
+    sigma <- matrix(rep(sigma, nDTR), ncol = nDTR, byrow = F)
+  } else if (nrow(sigma) == nDTR & 
+             length(grep("dtr", rownames(sigma))) == nDTR & 
+             ncol(sigma) == 1) {
+    # case in which there is one row per DTR (i.e., pool.time = T, pool.dtr = F)
+    sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times), byrow = F))
+  }
+  
+  sigma
 }
 
 response.beta <- function(d, gammas, r1, r0, respDirection = NULL, sigma, causal = F) {
   shape1 <- r1 / (1 - r1)
   shape0 <- r0 / (1 - r0)
-  x <- pnorm(d$Y1, mean = gammas[1] + gammas[2] + gammas[3]*d$A1, sd = sigma)
-  respProb <- vector("numeric", nrow(d))
   
-  
-  
-  respProb[d$A1 ==  1] <- qbeta(x[d$A1 ==  1], shape1 = shape1, shape2 = 1)
-  respProb[d$A1 == -1] <- qbeta(x[d$A1 == -1], shape1 = shape0, shape2 = 1)
-  d$respProb <- respProb
-  d$R <- sapply(1:nrow(d), function(i) rbinom(1, 1, respProb[i]))
+  if (causal) {
+    x1 <- pnorm(d$Y1.1, mean = gammas[1] + gammas[2] + gammas[3], sd = sigma)
+    x0 <- pnorm(d$Y1.0, mean = gammas[1] + gammas[2] - gammas[3], sd = sigma)
+    
+    d$respProb.1 <- qbeta(x1, shape1 = shape1, shape2 = 1)
+    d$respProb.0 <- qbeta(x0, shape1 = shape0, shape2 = 1)
+    
+    d$R.1 <- sapply(1:nrow(d), function(i) rbinom(1, 1, d$respProb.1[i]))
+    d$R.0 <- sapply(1:nrow(d), function(i) rbinom(1, 1, d$respProb.0[i]))
+  } else {
+    x <- pnorm(d$Y1, mean = gammas[1] + gammas[2] + gammas[3]*d$A1, sd = sigma)
+    respProb <- vector("numeric", nrow(d))
+    
+    respProb[d$A1 ==  1] <- qbeta(x[d$A1 ==  1], shape1 = shape1, shape2 = 1)
+    respProb[d$A1 == -1] <- qbeta(x[d$A1 == -1], shape1 = shape0, shape2 = 1)
+    d$respProb <- respProb
+    d$R <- sapply(1:nrow(d), function(i) rbinom(1, 1, respProb[i]))
+  }
   
   return(list("data" = d, "r1" = r1, "r0" = r0))
 }
@@ -1129,10 +1186,15 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
   return(invisible(d))
 }
 
-sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
-                        design = 2, round = "up", conservative = TRUE) {
+sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
+                        design = 2, rounding = c("up", "down"), conservative = TRUE) {
+  message(paste("delta =", delta, "\nr =", r, "\nr1 =", r1, "\nr0 =", r0, "\nrho =", rho))
+  rounding <- match.arg(rounding)
+  
+  if (is.null(r)) r <- mean(c(r1, r0))
+  
   # Input checks
-  if (!is.null(round) & !(round %in% c("up", "down"))) stop("round must be either up or down")
+  if (!is.null(rounding) & !(rounding %in% c("up", "down"))) stop("rounding must be either up or down")
   nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
   correction <- 1 - rho^2
   if (design == 1) {
@@ -1141,7 +1203,7 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
       correction <- (1-rho^2) - (1-rho)*rho^2 / (2*(1+rho))
     }
   } else if (design == 2) {
-    designEffect <- 2 - r
+    designEffect <- ((2 - r1) + (2 - r0)) / 2
     if (!conservative) {
       correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + (1 - rho)/(1 + rho) * rho^2 / (2 - r)
     }
@@ -1153,11 +1215,13 @@ sample.size <- function(delta, r, rho, alpha = 0.05, power = .8,
   }
   else stop("Not a valid design indicator.")
   
-  if (round == "up") {
-    ceiling(nid * designEffect * correction)
-  } else if (round == "down") {
-    floor(nid * designEffect * correction)
+  if (rounding == "up") {
+    n <- ceiling(nid * designEffect * correction)
+  } else if (rounding == "down") {
+    n <- floor(nid * designEffect * correction)
   }
+  message('generating sample size')
+  return(n)
 }
 
 ### Wrapper for all the estimation functions
@@ -1272,14 +1336,7 @@ varmat <- function(sigma2, rho, times, design, corstr = c("identity", "exchangea
   nDTR <- switch(design, 8, 4, 3)
   corstr <- match.arg(corstr)
   
-  ## FIXME: accomodate for pooling over time but not DTR (maybe? this is an impossible scenario, but...)
-  if (length(sigma2) == 1) {
-    sigma2 <- matrix(rep(sigma2, nDTR * length(times)), ncol = nDTR)
-  } else if (length(sigma2) == length(times)) {
-    sigma2 <- matrix(rep(sigma2, nDTR), ncol = nDTR, byrow = F)
-  } else if (length(sigma2) != length(times) & length(sigma2) != nDTR * length(times)) {
-    stop("sigma2 must either be length-1, the same length as times, or must be an nDTR-by-length(times) matrix.")
-  }
+  sigma2 <- reshapeSigma(sigma2, times, design)
   
   if (length(rho) == 1 & corstr == "unstructured") {
     warning("rho is length 1 with unstructured corstr. Setting corstr to exchangeable.")
