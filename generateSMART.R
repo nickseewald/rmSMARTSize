@@ -193,40 +193,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
                         balanceRand,
                         empirical)
     
+    d <- generateStage2.means(d, times, spltime, gammas, lambdas, design, corstr)
+    
     if (design == 1) {
-      
-      d$Y2.111 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
-        gammas[4] + gammas[5] + d$R.1 * (gammas[6] + gammas[8]) / r1 + (1-d$R.1)*(gammas[7] + gammas[9])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
-      
-      d$Y2.110 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
-        gammas[4] + gammas[5] + d$R.1 * (gammas[6] + gammas[8]) / r1 + (1-d$R.1)*(-gammas[7] - gammas[9])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
-      
-      d$Y2.101 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
-        gammas[4] + gammas[5] + d$R.1 * (-gammas[6] - gammas[8]) / r1 + (1-d$R.1)*(gammas[7] + gammas[9])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
-      
-      d$Y2.100 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.1) +
-        gammas[4] + gammas[5] + d$R.1 * (-gammas[6] - gammas[8]) / r1 + (1-d$R.1)*(-gammas[7] - gammas[9])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
-      
-      d$Y2.011 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
-        gammas[4] - gammas[5] + d$R.0 * (gammas[6] - gammas[8]) / r0 + (1-d$R.0)*(gammas[7] - gammas[9])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2]) 
-      
-      d$Y2.010 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
-        gammas[4] - gammas[5] + d$R.0 * (gammas[6] - gammas[8]) / r0 + (1-d$R.0)*(-gammas[7] + gammas[9])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
-      
-      d$Y2.001 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
-        gammas[4] - gammas[5] + d$R.0 * (-gammas[6] + gammas[8]) / r0 + (1-d$R.0)*(gammas[7] - gammas[9])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
-      
-      d$Y2.000 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) + rho/(1+rho) * (d$Y0 + d$Y1.0) +
-        gammas[4] - gammas[5] + d$R.0 * (-gammas[6] + gammas[8]) / r0 + (1-d$R.0)*(-gammas[7] + gammas[9])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
-      
       ## Time 2 variances
       
       # Check variance assumption:
@@ -307,32 +276,13 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
     } else if (design == 2) {
       ## DESIGN 2
-      
-      ## Time 2 means
-      d$Y2.11 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) +
-        rho/(1+rho) * (d$Y0 + d$Y1.1) + gammas[4] + gammas[5] + (1-d$R.1)*(gammas[6] + gammas[7])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2]) 
-      
-      d$Y2.10 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] + gammas[3]) / (1+rho) +
-        rho/(1+rho) * (d$Y0 + d$Y1.1) + gammas[4] + gammas[5] + (1-d$R.1)*(-gammas[6] - gammas[7])/(1-r1) +
-        (d$R.1 - r1) * (lambdas[1] + lambdas[2])
-      
-      d$Y2.01 <- (1-rho)/(1+rho) * gammas[1] + (gammas[2] - gammas[3]) / (1+rho) +
-        rho/(1+rho) * (d$Y0 + d$Y1.0) + gammas[4] - gammas[5] + (1-d$R.0)*(gammas[6] - gammas[7])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
-      
-      d$Y2.00 <- (1-rho)/(1+rho) * gammas[1] + spltime * (gammas[2] - gammas[3]) / (1+rho) +
-        rho/(1+rho) * (d$Y0 + d$Y1.0) + gammas[4] - gammas[5] + (1-d$R.0)*(-gammas[6] + gammas[7])/(1-r0) +
-        (d$R.0 - r0) * (lambdas[1] - lambdas[2])
-      
-      
       ## Time 2 variances
       
       # Check variance assumption:
-      sigma.r1.LB <- sqrt(sigma^2 + ((1 - r1) / r1) * (mean(d$Y2.11[d$R.1 == 0]) - mean(d$Y2.11))^2 -
-                            (mean(d$Y2.11[d$R.1 == 1]) - mean(d$Y2.11[d$R.1 == 0]))^2)
-      sigma.r0.LB <- sqrt(sigma^2 + ((1 - r0) / r0) * (mean(d$Y2.00[d$R.0 == 0]) - mean(d$Y2.00))^2 -
-                            (mean(d$Y2.00[d$R.0 == 1]) - mean(d$Y2.00[d$R.0 == 0]))^2)
+      sigma.r1.LB <- sqrt(max(0, sigma^2 + ((1 - r1) / r1) * (mean(d$Y2.101[d$R.1 == 0]) - mean(d$Y2.101))^2 -
+                            (mean(d$Y2.101[d$R.1 == 1]) - mean(d$Y2.101[d$R.1 == 0]))^2))
+      sigma.r0.LB <- sqrt(max(0, sigma^2 + ((1 - r0) / r0) * (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
+                            (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2))
       
       if (sigma.r1.LB > sigma.r1 | sigma.r0.LB > sigma.r0) {
         message("Conditional variation working assumption violated.")
@@ -341,10 +291,10 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
         condVarAssump <- 0
       }
       
-      sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.00[R.0 == 1]) - mean(Y2.00[R.0 == 0]))^2) / (1 - r0))
-      sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.01[R.0 == 1]) - mean(Y2.01[R.0 == 0]))^2) / (1 - r0))
-      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.10[R.1 == 1]) - mean(Y2.10[R.1 == 0]))^2) / (1 - r1))
-      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.11[R.1 == 1]) - mean(Y2.11[R.1 == 0]))^2) / (1 - r1))
+      sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.000[R.0 == 1]) - mean(Y2.000[R.0 == 0]))^2) / (1 - r0))
+      sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - mean(Y2.001[R.0 == 0]))^2) / (1 - r0))
+      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) - mean(Y2.100[R.1 == 0]))^2) / (1 - r1))
+      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - mean(Y2.101[R.1 == 0]))^2) / (1 - r1))
       
       v2.0.R <- sigma.r0^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
       v2.0.NR.0 <- sigma.nr00^2 - (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
@@ -359,17 +309,17 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       e2.0.R <- rnorm(sum(d$R.0), 0, sqrt(v2.0.R))
       e2.1.R <- rnorm(sum(d$R.1), 0, sqrt(v2.1.R))
       
-      d$Y2.00[d$R.0 == 1] <- d$Y2.00[d$R.0 == 1] + e2.0.R
-      d$Y2.00[d$R.0 == 0] <- d$Y2.00[d$R.0 == 0] + rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.0))
+      d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R
+      d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.0))
       
-      d$Y2.01[d$R.0 == 1] <- d$Y2.01[d$R.0 == 1] + e2.0.R
-      d$Y2.01[d$R.0 == 0] <- d$Y2.01[d$R.0 == 0] + rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.1))
+      d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R
+      d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.1))
       
-      d$Y2.10[d$R.1 == 1] <- d$Y2.10[d$R.1 == 1] + e2.1.R
-      d$Y2.10[d$R.1 == 0] <- d$Y2.10[d$R.1 == 0] + rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.0))
+      d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R
+      d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.0))
       
-      d$Y2.11[d$R.1 == 1] <- d$Y2.11[d$R.1 == 1] + e2.1.R
-      d$Y2.11[d$R.1 == 0] <- d$Y2.11[d$R.1 == 0] + rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.1))
+      d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R
+      d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.1))
       
      
       
@@ -387,10 +337,10 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA
-      d$Y2[d$dtr1 == 1] <- d$Y2.11[d$dtr1 == 1]
-      d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.10[d$dtr2 == 1 & d$R == 0]
-      d$Y2[d$dtr3 == 1] <- d$Y2.01[d$dtr3 == 1]
-      d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.00[d$dtr4 == 1 & d$R == 0]
+      d$Y2[d$dtr1 == 1] <- d$Y2.101[d$dtr1 == 1]
+      d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
+      d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
+      d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
       
       # Compute weights
       d$weight <- 2 * (d$R + 2 * (1 - d$R))
@@ -424,13 +374,13 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
     return(list("data" = d,  "valid" = F, 
                 "params" = list("times" = times, "spltime" = spltime, "r1" = r1, "r0" = r0,
                                 "gammas" = gammas, "lambdas" = lambdas, "design" = design),
-                "assumptions" = list("conditionalVariance" = NULL)))
+                "assumptions" = list("conditionalVariation" = NULL)))
   }
   
   output <- list("data" = d, "potentialData" = d.full, "valid" = T, 
                  "params" = list("times" = times, "spltime" = spltime, "r1" = r1, "r0" = r0,
                                  "gammas" = gammas, "lambdas" = lambdas, "design" = design),
-                 "assumptions" = list("conditionalVariance" = condVarAssump))
+                 "assumptions" = list("conditionalVariation" = condVarAssump))
   class(output) <- c('generateSMART', class(output))
   return(output)
 }
