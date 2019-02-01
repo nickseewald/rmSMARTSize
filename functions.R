@@ -47,10 +47,13 @@ combine.results <- function(list1, list2) {
                        list(list1$respCor, list2$respCor))
   condCov    <- Reduce(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
                        list(list1$condCov, list2$condCov))
+  assumptionViolations <- Map(function(x, y) {x[is.na(x)] <- 0; y[is.na(y)] <- 0; x + y},
+                              list1$assumptionViolations, list2$assumptionViolations)
   
   result <- list("pval" = pval, "param.hat" = param.hat, "sigma2.hat" = sigma2.hat, "iter" = iter,
                  "param.var" = param.var, "rho.hat" = rho.hat, "valid" = valid, "coverage" = coverage,
-                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov)
+                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov, 
+                 "assumptionViolations" = assumptionViolations)
   
   if ("data" %in% names(list1)) {
     dataList <- c(list1$data, list2$data)
@@ -774,15 +777,16 @@ estimate.sigma2 <- function(d, times, spltime, design, gammas, pool.time = F, po
 # Clean up output of combine.results, to be used in the foreach loop after
 # combining everything
 finalize.results <- function(x) {
-  param.hat     <- apply(as.matrix(x$param.hat), 2, mean, na.rm = T)
-  sigma2.hat    <- x$sigma2.hat / x$valid
-  param.var     <- x$param.var / x$valid
-  param.var.est <- apply(as.matrix(x$param.hat), 2, var, na.rm = T)
-  rho.hat       <- mean(x$rho.hat, na.rm = T)
-  coverage      <- as.numeric(x$coverage / x$valid)
-  condVars      <- lapply(x$condVars, function(v) v / x$valid)
-  respCor       <- x$respCor / x$valid
-  condCov       <- x$condCov / x$valid
+  param.hat            <- apply(as.matrix(x$param.hat), 2, mean, na.rm = T)
+  sigma2.hat           <- x$sigma2.hat / x$valid
+  param.var            <- x$param.var / x$valid
+  param.var.est        <- apply(as.matrix(x$param.hat), 2, var, na.rm = T)
+  rho.hat              <- mean(x$rho.hat, na.rm = T)
+  coverage             <- as.numeric(x$coverage / x$valid)
+  condVars             <- lapply(x$condVars, function(v) v / x$valid)
+  respCor              <- x$respCor / x$valid
+  condCov              <- x$condCov / x$valid
+  assumptionViolations <- lapply(x$assumptionViolations, function(v) v / x$valid)
   
   cat("Finishing...\n")
   
@@ -790,7 +794,8 @@ finalize.results <- function(x) {
                  "niter" = x$niter, "corstr" = x$corstr, "pval" = x$pval, "param.hat" = param.hat,
                  "sigma2.hat" = sigma2.hat, "iter" = x$iter, "param.var" = param.var,
                  "rho.hat" = rho.hat, "valid" = x$valid, "coverage" = coverage, "condVars" = condVars,
-                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov)
+                 "condVars" = condVars, "respCor" = respCor, "condCov" = condCov,
+                 "assumptionViolations" = assumptionViolations)
   
   if ("data" %in% names(x))
     result[["data"]] <- x$data
@@ -1036,7 +1041,7 @@ response.beta <- function(d, gammas, r1, r0, respDirection = NULL, sigma, causal
   return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-response.indep <- function(d, gammas, r1, r0, respDirection = NULL, causal = F) {
+response.indep <- function(d, gammas, r1, r0, respDirection = NULL, causal = F, ...) {
   if (causal) {
     d$R.1 <- rbinom(nrow(d), 1, r1)
     d$R.0 <- rbinom(nrow(d), 1, r0)
@@ -1188,7 +1193,6 @@ resultTable <- function(results, alternative = c("two.sided", "less", "greater")
 
 sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
                         design = 2, rounding = c("up", "down"), conservative = TRUE) {
-  message(paste("delta =", delta, "\nr =", r, "\nr1 =", r1, "\nr0 =", r0, "\nrho =", rho))
   rounding <- match.arg(rounding)
   
   if (is.null(r)) r <- mean(c(r1, r0))

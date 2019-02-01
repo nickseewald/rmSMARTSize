@@ -193,7 +193,13 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design, ba
                         balanceRand,
                         empirical)
     
-    d <- generateStage2.means(d, times, spltime, gammas, lambdas, design, corstr)
+    # Extract parameters from stage 1
+    r0 <- d$r0
+    r1 <- d$r1
+    rho <- d$rho
+    
+    d <- generateStage2.means(d, times, spltime, gammas, lambdas,
+                              design, corstr)
     
     if (design == 1) {
       ## Time 2 variances

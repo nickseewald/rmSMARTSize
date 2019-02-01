@@ -181,11 +181,11 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                "condVars" = lapply(1:length(dtrIndex(design)$a1), 
                                                    function(x) matrix(0, ncol = length(times), nrow = length(times))),
                                "respCor" = matrix(rep(0, combn(times[times <= spltime], 2) * 2), ncol = 2),
-                               "condCov" = matrix(rep(0, nrow(expand.grid(times[times <= spltime], times[times > spltime])) * 2), ncol = 2)
-                               )
-                # if (save.data) {
-                #   result[["data"]] <- list(d$data)
-                # }
+                               "condCov" = matrix(rep(0, nrow(expand.grid(times[times <= spltime], times[times > spltime])) * 2), ncol = 2),
+                               "assumptionViolations" = d$assumptions)
+                if (save.data) {
+                  result[["data"]] <- list(d$data)
+                }
                 return(result)
               } else {
                 d1 <- reshape(d$data, varying = list(grep("Y", names(d$data))), ids = d$data$id, 
