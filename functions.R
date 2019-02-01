@@ -468,6 +468,15 @@ dtrIndex <- function(design) {
   return(list("a1" = a1, "a2R" = a2R, "a2NR" = a2NR))
 }
 
+dtrNames <- function(design) {
+  DTRs <- dtrIndex(design)
+  
+  dtrTriples <- as.data.frame((do.call(cbind, DTRs) + 1) / 2)
+  dtrTriples[dtrTriples == 0.5] <- 0
+  dtrTriples <- apply(dtrTriples, 1, function(x) paste(x, collapse = ""))
+  dtrTriples
+}
+
 ### Compute value of the estimating equations
 esteqn.compute <- function(d, V, times, spltime, design, gammas) {
   # d is an unreplicated data set in LONG format
