@@ -59,7 +59,6 @@ generateStage1 <- function(n, times, spltime, r1, r0, gammas,
   d$R[d$A1 == 1]  <- d$R.1[d$A1 == 1]
   d$R[d$A1 == -1] <- d$R.0[d$A1 == -1]
   
-  class(d) <- c("stage1SMART", class(d))
   output <- list("data" = d, "r0" = r0, "r1" = r1, "rho" = rho)
   class(output) <- c("generateStage1", class(output))
   output
@@ -146,11 +145,20 @@ testVarianceInput <- function(x, a, d, r0, r1, rho) {
   y2string <- paste0("Y2.", paste0(a, collapse = ""))
   rstring <- paste0("R.", a[1])
   rprobstring <- paste0("r", a[1])
-  sigma.nr <- sqrt(max(0, (sigma^2 - get(rprobstring) * x^2 - 
-                             get(paste0("r", a[1]))*(1-get(paste0("r", a[1]))) * 
-                             with(d, mean(get(y2string)[get(rstring) == 1]) -
-                                    mean(get(y2string)[get(rstring) == 0]))^2) / (1 - get(rprobstring))))
-  sigma.nr^2 - (rho / (1 + rho))^2 * with(subset(d, get(rstring) == 0), var(Y0 + get(paste0("Y1.", a[1]))))
+  sigma.nr <- 
+    # sqrt(max(0.1,
+             (sigma^2 - get(rprobstring) * x^2 - 
+                get(paste0("r", a[1]))*(1-get(paste0("r", a[1]))) * 
+                with(d, mean(get(y2string)[get(rstring) == 1]) -
+                       mean(get(y2string)[get(rstring) == 0]))^2) /
+               (1 - get(rprobstring))
+    # ))
+  sigma.nr - (rho / (1 + rho))^2 * with(subset(d, get(rstring) == 0), 
+                                          var(Y0 + get(paste0("Y1.", a[1]))))
+  
+  # ((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * 
+  #     with(d, mean(Y2.000[R.0 == 1]) - mean(Y2.000[R.0 == 0]))^2) /
+  #     (1 - r0))
 }
 
 testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
@@ -163,7 +171,7 @@ testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
   sg <- foreach(i = 1:nrow(simGrid), .combine = rbind, .inorder = TRUE, 
           .export = ls(envir = .GlobalEnv)) %dorng% {
 
-                # Extract parameters from simGrid
+    # Extract parameters from simGrid
     rho <- simGrid$corr[i]
     respFunction <- get(unlist(simGrid$respFunction[i]))
     
@@ -191,7 +199,7 @@ testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
                 max(
                   sapply(dtrTriples[substr(dtrTriples, 1, 1) == 0],
                          function(dtr) {
-                           max(0, sigma^2 + (1-r0)/r0 *
+                           max(0.1, sigma^2 + (1-r0)/r0 *
                                  (mean(get(paste0("Y2.", dtr))[R.0 == 0]) -
                                     mean(get(paste0("Y2.", dtr))))^2 -
                                  (mean(get(paste0("Y2.", dtr))[R.0 == 1]) -
@@ -211,9 +219,11 @@ testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
     
     sigma.r0.UB<- 
       min(uniroot(testVarianceInput, interval = c(-1, 2*sigma),
-                  a = c(0, 0, 1), d = s, r0 = r0, r1 = r1, rho = rho)$root,
+                  a = c(0, 0, 1), d = s, r0 = r0, r1 = r1, rho = rho,
+                  extendInt = "yes")$root,
           uniroot(testVarianceInput, interval = c(-1, 2*sigma),
-                  a = c(0, 0, 0), d = s, r0 = r0, r1 = r1, rho = rho)$root)
+                  a = c(0, 0, 0), d = s, r0 = r0, r1 = r1, rho = rho,
+                  extendInt = "yes")$root)
     
     sigma.r0 <- mean(c(sigma.r0.LB, sigma.r0.UB))
     
@@ -222,7 +232,7 @@ testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
                 max(
                   sapply(dtrTriples[substr(dtrTriples, 1, 1) == 1],
                          function(dtr) {
-                           max(0, sigma^2 + (1-r1)/r1 *
+                           max(0.1, sigma^2 + (1-r1)/r1 *
                                  (mean(get(paste0("Y2.", dtr))[R.1 == 0]) -
                                     mean(get(paste0("Y2.", dtr))))^2 -
                                  (mean(get(paste0("Y2.", dtr))[R.1 == 1]) -
@@ -242,15 +252,18 @@ testGenerativeVariances <- function(simGrid, times, spltime, gammas, sigma,
     # 
     sigma.r1.UB <- 
       min(uniroot(testVarianceInput, interval = c(-1, 2*sigma), 
-                  a = c(1, 0, 1), d = s, r0 = r0, r1 = r1, rho = rho)$root,
+                  a = c(1, 0, 1), d = s, r0 = r0, r1 = r1, rho = rho,
+                  extendInt = "yes")$root,
           uniroot(testVarianceInput, interval = c(-1, 2*sigma),
-                  a = c(1, 0, 0), d = s, r0 = r0, r1 = r1, rho = rho)$root)
+                  a = c(1, 0, 0), d = s, r0 = r0, r1 = r1, rho = rho,
+                  extendInt = "yes")$root)
     
     sigma.r1 <- mean(c(sigma.r1.LB, sigma.r1.UB))
     
-    cbind(simGrid[i, ], "sigma.r0.LB" = sigma.r0.LB, "sigma.r0.UB" = sigma.r0.UB,
-          "sigma.r0" = sigma.r0, "sigma.r1.LB" = sigma.r1.LB,
-          "sigma.r1.UB" = sigma.r1.UB, "sigma.r1" = sigma.r1)
+    cbind(simGrid[i, ], "sigma.r0.LB" = sigma.r0.LB, 
+          "sigma.r0.UB" = sigma.r0.UB, "sigma.r0" = sigma.r0,
+          "sigma.r1.LB" = sigma.r1.LB, "sigma.r1.UB" = sigma.r1.UB,
+          "sigma.r1" = sigma.r1)
           }
   sg
 }
