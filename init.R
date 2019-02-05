@@ -40,10 +40,13 @@ slackrSetup(config_file = here("njssimsslack.dcf"))
 ### CLUSTER SETUP ###
 # Check for Rmpi and create cluster appropriately
 if (check.dompi) {
-  clus <- startMPIcluster(verbose = T)
+  clus <- startMPIcluster(verbose = T, 
+                          logdir = file.path("outFiles", "workers", ""))
 } else {
   ncore <- detectCores()
-  clus <- makeCluster(ncore, outfile = "outFiles/log.txt")
+  clus <- makeCluster(ncore, 
+                      outfile = file.path("outFiles",
+                                          paste0("log", Sys.Date(), ".txt")))
 }
 
 if (check.dompi) {
