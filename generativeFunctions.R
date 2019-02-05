@@ -1,11 +1,37 @@
-## Data Generation Helper Functions
+# generativeFunctions.R
+# Data Generation Helper Functions
+# Copyright 2018 Nicholas J. Seewald
+#
+# This file is part of rmSMARTsize.
+# 
+# rmSMARTsize is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# rmSMARTsize is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
-generateStage1 <- function(n, times, spltime, r1, r0, gammas,
-                            sigma, corstr = c("identity", "exchangeable", "ar1"),
-                            rho = 0, 
-                            respFunction, respDirection = NULL, 
-                            balanceRand = FALSE,
-                            empirical = FALSE, old = FALSE) {
+generateStage1 <- function(n,
+                           times,
+                           spltime,
+                           r1,
+                           r0,
+                           gammas,
+                           sigma,
+                           corstr = c("identity", "exchangeable", "ar1"),
+                           rho = 0,
+                           respFunction,
+                           respDirection = NULL,
+                           balanceRand = FALSE,
+                           empirical = FALSE,
+                           old = FALSE) {
+  
   if (old) 
     warning("Option 'old' currently does nothing in generateStage1()")
   if (is.null(n))
@@ -30,15 +56,21 @@ generateStage1 <- function(n, times, spltime, r1, r0, gammas,
   
   ## Generate stage 1 potential outcomes
   if (corstr %in% c("exchangeable", "identity")) {
-    # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
+    # FIXME: This only works for time 1 right now! Any other time will not have 
+    # proper correlation structure
     d[, paste0("Y", times[times > 0 & times <= spltime], ".0")] <-
-      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + 
+      rnorm(n, 0, sqrt((1-rho^2))*sigma)
     d[, paste0("Y", times[times > 0 & times <= spltime], ".1")] <-
-      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + 
+      rnorm(n, 0, sqrt((1-rho^2))*sigma)
   } else if (corstr == "ar1") {
-    # FIXME: This only works for time 1 right now! Any other time will not have proper correlation structure
-    d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    # FIXME: This only works for time 1 right now! Any other time will not have 
+    # proper correlation structure
+    d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] -
+      gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] +
+      gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
   } else {
     warning("Y1 not created")
   }
@@ -64,8 +96,15 @@ generateStage1 <- function(n, times, spltime, r1, r0, gammas,
   output
 }
 
-generateStage2.means <- function(stage1, times, spltime, gammas, lambdas,
-                                 design, corstr = c("identity", "exchangeable", "ar1")) {
+generateStage2.means <-
+  function(stage1,
+           times,
+           spltime,
+           gammas,
+           lambdas,
+           design,
+           corstr = c("identity", "exchangeable", "ar1")) {
+    
   if (!("generateStage1") %in% class(stage1))
     stop("'stage1' must be generated from 'generateStage1'")
   
@@ -98,38 +137,54 @@ generateStage2.means <- function(stage1, times, spltime, gammas, lambdas,
   # specific to responders and non-responders
   if (design == 1) {
     designMeanAdj.R <- matrix(rep(
-      dtrTxts[2, ] * (gammas[6] + gammas[8] * dtrTxts[1, ]) / respProbVec +
-        (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
-      n), nrow = n, byrow = T)
+      dtrTxts[2,] * (gammas[6] + gammas[8] * dtrTxts[1,]) / respProbVec +
+        (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+      n
+    ),
+    nrow = n,
+    byrow = T)
     designMeanAdj.NR <- matrix(rep(
-      dtrTxts[3, ] * (gammas[7] + gammas[9] * dtrTxts[1, ]) / (1 - respProbVec) -
-        respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
-      n), nrow = n, byrow = T)
+      dtrTxts[3,] * (gammas[7] + gammas[9] * dtrTxts[1,]) / (1 - respProbVec) -
+        respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+      n
+    ),
+    nrow = n,
+    byrow = T)
   } else if (design == 2) {
-    designMeanAdj.R <- matrix(rep(
-      (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
-      n), nrow = n, byrow = T)
+    designMeanAdj.R <- 
+      matrix(rep((1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+                 n), nrow = n, byrow = T)
     designMeanAdj.NR <- matrix(rep(
-      dtrTxts[3, ] * (gammas[6] + gammas[7] * dtrTxts[1, ]) / (1 - respProbVec) -
-        respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
-      n), nrow = n, byrow = T)
+      dtrTxts[3,] * (gammas[6] + gammas[7] * dtrTxts[1,]) / (1 - respProbVec) -
+        respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+      n
+    ),
+    nrow = n,
+    byrow = T)
   } else if (design == 3) {
     
-  } else stop("'design' must be one of 1, 2, or 3.")
+  } else
+    stop("'design' must be one of 1, 2, or 3.")
   
   if (corstr %in% c("identity", "exchangeable")) {
-    # FIXME: This only works for time 2 right now! Any other time will not have proper correlation structure
+    # FIXME: This only works for time 2 right now! Any other time will not have 
+    # proper correlation structure
     d[, paste0("Y", times[times > spltime], ".", dtrTriples)] <- 
-      # Start with a matrix of just the appropriate linear combinations of gammas
-      # (only up to the stage 1 parts of the time 2 model)
+      # Start with a matrix of just the appropriate linear combinations of 
+      # gammas (only up to the stage 1 parts of the time 2 model)
       matrix(rep(
-        ((1-rho)/(1+rho)) * gammas[1] + (gammas[2] + gammas[3] * dtrTxts[1, ])/(1+rho) +
-          gammas[4] + gammas[5] * dtrTxts[1, ],
-        n), nrow = n, byrow = T) + 
+        ((1 - rho) / (1 + rho)) * gammas[1] + 
+          (gammas[2] + gammas[3] * dtrTxts[1,]) / (1 + rho) +
+          gammas[4] + gammas[5] * dtrTxts[1,],
+        n
+      ),
+      nrow = n,
+      byrow = T) + 
       # Add Y0 and the appropriate causal Y1
       (rho/(1+rho)) * (d$Y0 + 
                          matrix(c(rep(d$Y1.1, sum(dtrTxts[1, ] == 1)),
-                                      rep(d$Y1.0, sum(dtrTxts[1, ] == -1))), nrow = n)
+                                      rep(d$Y1.0, sum(dtrTxts[1, ] == -1))),
+                                nrow = n)
                        ) +
       # Add response adjustment
       respMatrix * designMeanAdj.R + (1 - respMatrix) * designMeanAdj.NR
