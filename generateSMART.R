@@ -199,6 +199,25 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                    x
                  })
     )
+    
+    # Check variance assumption:
+    sigma.r1.LB <- 
+      sqrt(
+        sigma^2 + 
+          ((1 - r1) / r1) * (mean(d$Y2[d$R == 0]) - mean(d$Y2))^2 -
+          (mean(d$Y2[d$R == 1]) - mean(d$Y2[d$R == 0]))^2
+      )
+    sigma.r0.LB <- 
+      sqrt(
+        sigma^2 + 
+          ((1 - r0) / r0) * (mean(d$Y2[d$R == 0]) - mean(d$Y2))^2 -
+          (mean(d$Y2[d$R == 1]) - mean(d$Y2[d$R == 0]))^2)
+    
+    if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
+      condVarAssump <- 1
+    } else
+      condVarAssump <- 0
+    
   } else {
     #### UPDATED GENERATIVE MODEL ####
     
@@ -323,17 +342,6 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$A2NR <- d$A2R  <- 0
       d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
       d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
-      
-      d$weight <- 4
-      
-      d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
-      d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
-      d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
-      d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
-      d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
-      d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
-      d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
-      d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
     } else if (design == 2) {
       ## DESIGN 2
       ## Time 2 variances
@@ -439,23 +447,36 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
       d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
       d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
-      
-      # Compute weights
-      d$weight <- 2 * (d$R + 2 * (1 - d$R))
-      
-      d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-      d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
-      # }
     } else {
       
-      d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
-      
-      d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-      d$dtr3 <- as.numeric(with(d, (A1 == -1)))
     }
+  }
+  
+  #### Assign weights and DTR indicators ####
+  if (design == 1) {
+    d$weight <- 4
+    
+    d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
+    d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
+  } else if (design == 2) {
+    d$weight <- 2 * (d$R + 2 * (1 - d$R))
+    
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
+  } else if (design == 3) {
+    d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
+    
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1)))
   }
   
   d <- d[order(d$id), ]
