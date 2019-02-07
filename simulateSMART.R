@@ -116,6 +116,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   if (design == 1 & !is.null(uneqsdDTR) & !is.list(uneqsdDTR))
     stop("uneqsdDTR must be either NULL or a list.")
   
+  nDTR <- switch(design, 8, 4, 3)
+  
   ## Handle correlation structure
   corstr <- match.arg(corstr)
   if (corstr == "identity") {
@@ -165,10 +167,10 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   
   results <-
     foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
-            .export = ls(envir = .GlobalEnv), 
+            .export = ls(envir = .GlobalEnv),
             .packages = c("MASS", "xtable", "slackr"),
             .verbose = FALSE, .errorhandling = "remove", .multicombine = FALSE,
-            .inorder = FALSE) %dorng% { 
+            .inorder = FALSE) %dorng% {
               
               d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, 
                                  design = design, sigma, sigma.r1, sigma.r0,
@@ -180,10 +182,11 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                  respFunction = respFunction,
                                  respDirection = respDirection, ...)
               
-              nDTR <- switch(design, 8, 4, 3)
               if (d$valid == FALSE) {
                 ## If a non-valid trial has been generated (i.e., fewer than one
                 ## observation per cell), return a "blank" result
+                
+                cat("actually not valid ")
                 
                 sigma2.blank <-
                   matrix(
@@ -207,8 +210,11 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                   "sigma2.hat" = sigma2.blank,
                   "rho.hat" = NA,
                   "valid" = 0,
+                  "varFailCount" = varFailCount,
                   "coverage" = 0,
                   "iter" = NULL,
+                  "sigma.r0" = NULL,
+                  "sigma.r1" = NULL,
                   "condVars" = lapply(1:length(dtrIndex(design)$a1),
                                       function(x)
                                         matrix(0, ncol = length(times),
@@ -237,23 +243,31 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                               times = times, direction = "long", v.names = "Y")
                 d1 <- d1[order(d1$id, d1$time), ]
                 
+                cat('d1Sorted ')
+                
                 # Check working assumption re: correlation between response and
                 # products of residuals
                 respCor <- estimate.respCor(d$data, design, times, spltime, 
                                             gammas)
                 
+                cat('respCorComputed ')
+                
                 condCov <- estimate.condCov(d1, times, spltime,
                                             design, pool.dtr = T)
                 
+                cat('condCovComputed ')
+                
                 param.hat <-
-                  estimate.params(d1,
+                  tryCatch(estimate.params(d1,
                                   diag(rep(1, length(times))),
                                   times,
                                   spltime,
                                   design,
                                   rep(0, length(gammas)),
                                   maxiter.solver,
-                                  tol)
+                                  tol))
+                
+                cat(paste0("paramHatEstimatedIteration", i, "\n"))
                 
                 # param.hat2 <-
                 #   multiroot(
@@ -288,6 +302,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 outcome.var <-
                   varmat(sigma2.hat, rho.hat, times, design, 
                          corstr = "exchangeable")
+                
                 param.hat <-
                   estimate.params(d1,
                                   outcome.var,
@@ -299,7 +314,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                   tol)
                 
                 # Iterate until estimates of gammas and rho converge
-                for (i in 1:maxiter.solver) {
+                for (j in 1:maxiter.solver) {
                   sigma2.new <- estimate.sigma2(d1,
                                                 times,
                                                 spltime,
@@ -334,13 +349,13 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                     param.hat <- param.new
                     sigma2.hat <- sigma2.new
                     rho.hat <- rho.new
-                    iter <- i
+                    iter <- j
                     break
                   } else {
                     param.hat <- param.new
                     sigma2.hat <- sigma2.new
                     rho.hat <- rho.new
-                    iter <- i
+                    iter <- j
                   }
                 }
                 param.var <-
@@ -372,10 +387,13 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                     "sigma2.hat" = sigma2.hat,
                     "rho.hat" = rho.hat,
                     "valid" = 1,
+                    "varFailCount" = d$varFailCount,
                     "coverage" = coverage,
                     "respCor" = respCor,
                     "condCov" = condCov,
                     "iter" = iter,
+                    "sigma.r0" = d$params$sigma.r0,
+                    "sigma.r1" = d$params$sigma.r1,
                     "condVars" = condVars,
                     "assumptionViolations" = d$assumptions
                   )
@@ -387,6 +405,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 return(result)
               }
             }
+  
+  seedList <- attr(results, 'rng')
   
   results <-
     c(
@@ -429,6 +449,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
     )
   
   class(results) <- c("simResult", class(results))
+  
+  attr(results, 'rng') <- seedList
   
   if (notify) {
     try(slackr_bot(print(results)))

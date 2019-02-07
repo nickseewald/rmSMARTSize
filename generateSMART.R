@@ -77,6 +77,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   if (design != 2) 
     stop("New generative model structure only implemented for design 2")
   
+  dtrTriples <- dtrNames(design)
+  
   #### LEGACY GENERATIVE MODEL ####
   if (old) {
     
@@ -220,235 +222,316 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     
   } else {
     #### UPDATED GENERATIVE MODEL ####
+    varFail <- T
+    varFailCount <- 0
     
-    ## Initialize data frame
-    d <- generateStage1(n = n, times = times, spltime = spltime, 
-                        r1 = r1, r0 = r0,
-                        gammas = gammas,
-                        sigma = sigma, corstr = corstr,
-                        rho = rho, 
-                        respFunction = respFunction,
-                        respDirection, 
-                        balanceRand,
-                        empirical)
-    
-    # Extract parameters from stage 1
-    r0 <- d$r0
-    r1 <- d$r1
-    rho <- d$rho
-    
-    d <- generateStage2.means(d, times, spltime, gammas, lambdas,
-                              design, corstr)
-    
-    if (design == 1) {
-      ## Time 2 variances
+    while (varFail) {
       
-      # Check variance assumption:
-      sigma.r1.LB <- 
-        sqrt(sigma^2 + ((1 - r1) / r1) * 
-               (mean(d$Y2.111[d$R.1 == 0]) - mean(d$Y2.111))^2 -
-               (mean(d$Y2.111[d$R.1 == 1]) - mean(d$Y2.111[d$R.1 == 0]))^2)
-      sigma.r0.LB <- 
-        sqrt(sigma^2 + ((1 - r0) / r0) * 
-               (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
-               (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2)
+      if (varFailCount >= 100){
+        return(list(
+          "data" = d,
+          "valid" = F,
+          "varFailCount" = varFailCount,
+          "params" = list(
+            "times" = times,
+            "spltime" = spltime,
+            "r1" = r1,
+            "r0" = r0,
+            "gammas" = gammas,
+            "lambdas" = lambdas,
+            "design" = design,
+            "sigma.r0" = sigma.r0,
+            "sigma.r1" = sigma.r1
+          ),
+          "assumptions" = list("conditionalVariation" = NULL)
+        ))
+      }
       
-      if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
-        condVarAssump <- 1
-      } else
-        condVarAssump <- 0
+      ## Initialize data frame
+      d <- generateStage1(n = n, times = times, spltime = spltime, 
+                          r1 = r1, r0 = r0,
+                          gammas = gammas,
+                          sigma = sigma, corstr = corstr,
+                          rho = rho, 
+                          respFunction = respFunction,
+                          respDirection, 
+                          balanceRand,
+                          empirical)
       
-      # Notation: 
-      ## v2.(stage1).(R/NR).(stage2 given response) refers to *residual* 
-      ## variance; i.e., v2.1.R.1 is the additional variance needed for 
-      ## responders to A1=1 who are randomized to A2R=1
+      # Extract parameters from stage 1
+      r0 <- d$r0
+      r1 <- d$r1
+      rho <- d$rho
       
-      v2.1.R.1   <- sigma.r1^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
-      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.111[R.1 == 1]) -
-                                               mean(Y2.111[R.1 == 0]))^2) /
-                           (1 - r1))
-      v2.1.NR.1  <- sigma.nr11^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.nr11^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - 
-                                               mean(Y2.101[R.1 == 0]))^2) / r1)
-      v2.1.R.0   <- sigma.r10^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
-      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r10^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) -
-                                               mean(Y2.100[R.1 == 0]))^2) / 
-                           (1 - r1))
-      v2.1.NR.0  <- sigma.nr10^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+      d <- generateStage2.means(d, times, spltime, gammas, lambdas,
+                                design, corstr)
       
-      v2.0.R.1   <- sigma.r0^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
-      sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - 
-                            r0*(1-r0) * with(d, mean(Y2.011[R.0 == 1]) -
-                                               mean(Y2.011[R.0 == 0]))^2) /
-                           (1 - r0))
-      v2.0.NR.1  <- sigma.nr01^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.nr01^2 -
-                            r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - 
-                                               mean(Y2.001[R.0 == 0]))^2) / r0)
-      v2.0.R.0   <- sigma.r00^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
-      sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r00^2 - 
-                            r0*(1-r0) * with(d, mean(Y2.000[R.1 == 1]) -
-                                               mean(Y2.000[R.1 == 0]))^2) /
-                           (1 - r0))
-      v2.0.NR.0  <- sigma.nr00^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      
-      ## Add residuals at time 2
-      e2.1.R.1 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.1))
-      e2.1.R.0 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.0))
-      e2.0.R.1 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.1))
-      e2.0.R.0 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.0))
-      
-      e2.1.NR.1 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.1))
-      e2.1.NR.0 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.0))
-      e2.0.NR.1 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.1))
-      e2.0.NR.0 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.0))
-      
-      d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R.0
-      d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + e2.0.NR.0
-      
-      d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R.0
-      d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + e2.0.NR.1
-      
-      d$Y2.010[d$R.0 == 1] <- d$Y2.010[d$R.0 == 1] + e2.0.R.1
-      d$Y2.010[d$R.0 == 0] <- d$Y2.010[d$R.0 == 0] + e2.0.NR.0
-      
-      d$Y2.011[d$R.0 == 1] <- d$Y2.011[d$R.0 == 1] + e2.0.R.1
-      d$Y2.011[d$R.0 == 0] <- d$Y2.011[d$R.0 == 0] + e2.0.NR.1
-      
-      d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R.0
-      d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + e2.1.NR.0
-      
-      d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R.0
-      d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + e2.1.NR.1
-      
-      d$Y2.110[d$R.1 == 1] <- d$Y2.110[d$R.1 == 1] + e2.1.R.1
-      d$Y2.110[d$R.1 == 0] <- d$Y2.110[d$R.1 == 0] + e2.1.NR.0
-      
-      d$Y2.111[d$R.1 == 1] <- d$Y2.111[d$R.1 == 1] + e2.1.R.1
-      d$Y2.111[d$R.1 == 0] <- d$Y2.111[d$R.1 == 0] + e2.1.NR.1
-      
-      # Second-stage randomization
-      d$A2NR <- d$A2R  <- 0
-      d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
-      d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
-    } else if (design == 2) {
-      ## DESIGN 2
-      ## Time 2 variances
-      
-      # Check variance assumption:
-      sigma.r1.LB <- 
-        sqrt(
-          sigma^2 + 
-            ((1 - r1) / r1) * (mean(d$Y2.101[d$R.1 == 0]) - mean(d$Y2.101))^2 -
-            (mean(d$Y2.101[d$R.1 == 1]) - mean(d$Y2.101[d$R.1 == 0]))^2
-          )
-      sigma.r0.LB <- 
-        sqrt(
-          sigma^2 + 
-            ((1 - r0) / r0) * (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
-            (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2)
-      
-      if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
-        condVarAssump <- 1
-      } else
-        condVarAssump <- 0
-      
-      sigma.nr00 <- 
-        sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * 
-                with(d, mean(Y2.000[R.0 == 1]) - mean(Y2.000[R.0 == 0]))^2) /
-               (1 - r0))
-      sigma.nr01 <- 
-        sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) *
-                with(d, mean(Y2.001[R.0 == 1]) - mean(Y2.001[R.0 == 0]))^2) /
-               (1 - r0))
-      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r1^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) -
-                                               mean(Y2.100[R.1 == 0]))^2) /
-                           (1 - r1))
-      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) -
-                                               mean(Y2.101[R.1 == 0]))^2) /
-                           (1 - r1))
-      
-      v2.0.R <- sigma.r0^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
-      v2.0.NR.0 <- sigma.nr00^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      v2.0.NR.1 <- sigma.nr01^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      
-      v2.1.R <- sigma.r1^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
-      v2.1.NR.0 <- sigma.nr10^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      v2.1.NR.1 <- sigma.nr11^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      
-      ## Add variance
-      
-      e2.0.R <- rnorm(sum(d$R.0), 0, sqrt(v2.0.R))
-      e2.1.R <- rnorm(sum(d$R.1), 0, sqrt(v2.1.R))
-      
-      d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R
-      d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + 
-        rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.0))
-      
-      d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R
-      d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + 
-        rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.1))
-      
-      d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R
-      d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + 
-        rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.0))
-      
-      d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R
-      d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + 
-        rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.1))
-      
-      # Check conditional variation assumption
-      DTRs <- dtrIndex(design)
-      
-      dtrTriples <- as.data.frame((do.call(cbind, DTRs) + 1) / 2)
-      dtrTriples[dtrTriples == 0.5] <- 0
-      dtrTriples <- apply(dtrTriples, 1, function(x) paste(x, collapse = ""))
-      
-      lapply(dtrTriples, function(dtr) {
-        index <- get(paste0("R.", substr(dtr, 1, 1))) == 0
-        x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
-                             mean(get(paste0("Y2.", dtr))))^2))
-      })
-      
-      # Randomize stage 2
-      d$A2R <- 0
-      d$A2NR <- 0
-      d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
-      
-      # Construct weights and DTR indicators
-      d$weight <- 2*(d$R + 2 * (1 - d$R))
-      d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-      d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
-      
-      # Select potential Y2 value to observe based on randomization
-      d$Y2 <- NA
-      d$Y2[d$dtr1 == 1] <- d$Y2.101[d$dtr1 == 1]
-      d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
-      d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
-      d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
-    } else {
-      
+      if (design == 1) {
+        ## Time 2 variances
+        
+        # Check variance assumption:
+        sigma.r1.LB <- 
+          sqrt(sigma^2 + ((1 - r1) / r1) * 
+                 (mean(d$Y2.111[d$R.1 == 0]) - mean(d$Y2.111))^2 -
+                 (mean(d$Y2.111[d$R.1 == 1]) - mean(d$Y2.111[d$R.1 == 0]))^2)
+        sigma.r0.LB <- 
+          sqrt(sigma^2 + ((1 - r0) / r0) * 
+                 (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
+                 (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2)
+        
+        if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
+          condVarAssump <- 1
+        } else
+          condVarAssump <- 0
+        
+        # Notation: 
+        ## v2.(stage1).(R/NR).(stage2 given response) refers to *residual* 
+        ## variance; i.e., v2.1.R.1 is the additional variance needed for 
+        ## responders to A1=1 who are randomized to A2R=1
+        
+        v2.1.R.1   <- sigma.r1^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
+        sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - 
+                              r1*(1-r1) * with(d, mean(Y2.111[R.1 == 1]) -
+                                                 mean(Y2.111[R.1 == 0]))^2) /
+                             (1 - r1))
+        v2.1.NR.1  <- sigma.nr11^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+        sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.nr11^2 - 
+                              r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - 
+                                                 mean(Y2.101[R.1 == 0]))^2) / r1)
+        v2.1.R.0   <- sigma.r10^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
+        sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r10^2 - 
+                              r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) -
+                                                 mean(Y2.100[R.1 == 0]))^2) / 
+                             (1 - r1))
+        v2.1.NR.0  <- sigma.nr10^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+        
+        v2.0.R.1   <- sigma.r0^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
+        sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - 
+                              r0*(1-r0) * with(d, mean(Y2.011[R.0 == 1]) -
+                                                 mean(Y2.011[R.0 == 0]))^2) /
+                             (1 - r0))
+        v2.0.NR.1  <- sigma.nr01^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+        sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.nr01^2 -
+                              r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - 
+                                                 mean(Y2.001[R.0 == 0]))^2) / r0)
+        v2.0.R.0   <- sigma.r00^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
+        sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r00^2 - 
+                              r0*(1-r0) * with(d, mean(Y2.000[R.1 == 1]) -
+                                                 mean(Y2.000[R.1 == 0]))^2) /
+                             (1 - r0))
+        v2.0.NR.0  <- sigma.nr00^2 - 
+          (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+        
+        ## Add residuals at time 2
+        e2.1.R.1 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.1))
+        e2.1.R.0 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.0))
+        e2.0.R.1 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.1))
+        e2.0.R.0 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.0))
+        
+        e2.1.NR.1 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.1))
+        e2.1.NR.0 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.0))
+        e2.0.NR.1 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.1))
+        e2.0.NR.0 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.0))
+        
+        d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R.0
+        d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + e2.0.NR.0
+        
+        d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R.0
+        d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + e2.0.NR.1
+        
+        d$Y2.010[d$R.0 == 1] <- d$Y2.010[d$R.0 == 1] + e2.0.R.1
+        d$Y2.010[d$R.0 == 0] <- d$Y2.010[d$R.0 == 0] + e2.0.NR.0
+        
+        d$Y2.011[d$R.0 == 1] <- d$Y2.011[d$R.0 == 1] + e2.0.R.1
+        d$Y2.011[d$R.0 == 0] <- d$Y2.011[d$R.0 == 0] + e2.0.NR.1
+        
+        d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R.0
+        d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + e2.1.NR.0
+        
+        d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R.0
+        d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + e2.1.NR.1
+        
+        d$Y2.110[d$R.1 == 1] <- d$Y2.110[d$R.1 == 1] + e2.1.R.1
+        d$Y2.110[d$R.1 == 0] <- d$Y2.110[d$R.1 == 0] + e2.1.NR.0
+        
+        d$Y2.111[d$R.1 == 1] <- d$Y2.111[d$R.1 == 1] + e2.1.R.1
+        d$Y2.111[d$R.1 == 0] <- d$Y2.111[d$R.1 == 0] + e2.1.NR.1
+        
+        # Second-stage randomization
+        d$A2NR <- d$A2R  <- 0
+        d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
+        d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+      } else if (design == 2) {
+        ## DESIGN 2
+        ## Time 2 variances
+        
+        sigma.r0.UB<- 
+          min(uniroot(testVarianceInput, interval = c(-1, 2*sigma),
+                      a = c(0, 0, 1), d = d, r0 = r0, r1 = r1, rho = rho,
+                      resp = "nr", extendInt = "yes")$root,
+              uniroot(testVarianceInput, interval = c(-1, 2*sigma),
+                      a = c(0, 0, 0), d = d, r0 = r0, r1 = r1, rho = rho,
+                      resp = "nr", extendInt = "yes")$root)
+        
+        sigma.r1.UB <- 
+          min(uniroot(testVarianceInput, interval = c(-1, 2*sigma), 
+                      a = c(1, 0, 1), d = d, r0 = r0, r1 = r1, rho = rho,
+                      resp = "nr", extendInt = "yes")$root,
+              uniroot(testVarianceInput, interval = c(-1, 2*sigma),
+                      a = c(1, 0, 0), d = d, r0 = r0, r1 = r1, rho = rho,
+                      resp = "nr", extendInt = "yes")$root)
+        
+        # Check variance assumption:
+        
+        sigma.r1.LB <- 
+          sqrt(
+            with(d,
+                 max(
+                   c(sapply(dtrTriples[substr(dtrTriples, 1, 1) == 1],
+                            function(dtr) {
+                              max(0.1, sigma^2 + (1-r1)/r1 *
+                                    (mean(get(paste0("Y2.", dtr))[R.1 == 0]) -
+                                       mean(get(paste0("Y2.", dtr))))^2 -
+                                    (mean(get(paste0("Y2.", dtr))[R.1 == 1]) -
+                                       mean(get(paste0("Y2.", dtr))[R.1 == 0]))^2)
+                            }), 
+                     uniroot(testVarianceInput, interval = c(0, 2*sigma), 
+                             a = c(1, 0, 1), d = d, r0 = r0, r1 = r1, rho = rho,
+                             resp = "r", extendInt = "yes")$root^2)
+                 )
+            ))
+        
+        sigma.r0.LB <- 
+          sqrt(
+            with(d,
+                 max(
+                   c(sapply(dtrTriples[substr(dtrTriples, 1, 1) == 0],
+                            function(dtr) {
+                              max(0.1, sigma^2 + (1-r0)/r0 *
+                                    (mean(get(paste0("Y2.", dtr))[R.0 == 0]) -
+                                       mean(get(paste0("Y2.", dtr))))^2 -
+                                    (mean(get(paste0("Y2.", dtr))[R.0 == 1]) -
+                                       mean(get(paste0("Y2.", dtr))[R.0 == 0]))^2)
+                            }),
+                     uniroot(testVarianceInput, interval = c(0, 2*sigma), 
+                             a = c(0, 0, 0), d = d, r0 = r0, r1 = r1, rho = rho,
+                             resp = "r", extendInt = "yes")$root^2)
+                 )
+          ))
+        
+        if (sigma.r1.UB < sigma.r1.LB | sigma.r0.UB < sigma.r0.LB) {
+          varFail <- T
+          varFailCount <- varFailCount + 1
+          condVarAssump <- NULL
+          next
+        } else {
+          varFail <- F
+          
+          sigma.r0 <- mean(c(sigma.r0.LB, sigma.r0.UB))
+          sigma.r1 <- mean(c(sigma.r1.LB, sigma.r1.UB))
+          
+          sigma.nr00 <- 
+            sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) * 
+                    with(d, mean(Y2.000[R.0 == 1]) -
+                           mean(Y2.000[R.0 == 0]))^2) / (1 - r0))
+          sigma.nr01 <- 
+            sqrt((sigma^2 - r0 * sigma.r0^2 - r0*(1-r0) *
+                    with(d, mean(Y2.001[R.0 == 1]) - 
+                           mean(Y2.001[R.0 == 0]))^2) / (1 - r0))
+          sigma.nr10 <- 
+            sqrt((sigma^2 - r1 * sigma.r1^2 - 
+                    r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) -
+                                       mean(Y2.100[R.1 == 0]))^2) / (1 - r1))
+          sigma.nr11 <- 
+            sqrt((sigma^2 - r1 * sigma.r1^2 - 
+                    r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) -
+                                       mean(Y2.101[R.1 == 0]))^2) / (1 - r1))
+          
+          v2.0.R <- sigma.r0^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
+          v2.0.NR.0 <- sigma.nr00^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+          v2.0.NR.1 <- sigma.nr01^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
+          
+          v2.1.R <- sigma.r1^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
+          v2.1.NR.0 <- sigma.nr10^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+          v2.1.NR.1 <- sigma.nr11^2 - 
+            (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
+          
+          ## Add variance
+          
+          e2.0.R <- rnorm(sum(d$R.0), 0, sqrt(v2.0.R))
+          e2.1.R <- rnorm(sum(d$R.1), 0, sqrt(v2.1.R))
+          
+          d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R
+          d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + 
+            rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.0))
+          
+          d$Y2.001[d$R.0 == 1] <- d$Y2.001[d$R.0 == 1] + e2.0.R
+          d$Y2.001[d$R.0 == 0] <- d$Y2.001[d$R.0 == 0] + 
+            rnorm(sum(1 - d$R.0), 0, sqrt(v2.0.NR.1))
+          
+          d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R
+          d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + 
+            rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.0))
+          
+          d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R
+          d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + 
+            rnorm(sum(1 - d$R.1), 0, sqrt(v2.1.NR.1))
+          
+          # Check conditional variation assumption
+          DTRs <- dtrIndex(design)
+          
+          dtrTriples <- as.data.frame((do.call(cbind, DTRs) + 1) / 2)
+          dtrTriples[dtrTriples == 0.5] <- 0
+          dtrTriples <- apply(dtrTriples, 1, function(x) paste(x, collapse = ""))
+          
+          varCheck <- 
+            do.call(c, 
+                    lapply(dtrTriples, function(dtr) {
+                      index <- with(d, get(paste0("R.", substr(dtr, 1, 1))) == 0)
+                      x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
+                                           mean(get(paste0("Y2.", dtr))))^2))
+                    }))
+          
+          if (any(varCheck > sigma^2)) {
+            condVarAssump <- 1
+          } else {
+            condVarAssump <- 0
+          }
+        }
+        
+        # Randomize stage 2
+        d$A2R <- 0
+        d$A2NR <- 0
+        d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+        
+        # Construct weights and DTR indicators
+        d$weight <- 2*(d$R + 2 * (1 - d$R))
+        d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+        d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+        d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
+        d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
+        
+        # Select potential Y2 value to observe based on randomization
+        d$Y2 <- NA
+        d$Y2[d$dtr1 == 1] <- d$Y2.101[d$dtr1 == 1]
+        d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
+        d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
+        d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
+      } else {
+        ## DESIGN 3
+      }
     }
   }
   
@@ -493,6 +576,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     return(list(
       "data" = d,
       "valid" = F,
+      "varFailCount" = varFailCount,
       "params" = list(
         "times" = times,
         "spltime" = spltime,
@@ -500,7 +584,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
         "r0" = r0,
         "gammas" = gammas,
         "lambdas" = lambdas,
-        "design" = design
+        "design" = design,
+        "sigma.r0" = sigma.r0,
+        "sigma.r1" = sigma.r1
       ),
       "assumptions" = list("conditionalVariation" = NULL)
     ))
@@ -510,6 +596,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     "data" = d,
     "potentialData" = d.full,
     "valid" = T,
+    "varFailCount" = varFailCount,
     "params" = list(
       "times" = times,
       "spltime" = spltime,
@@ -517,7 +604,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       "r0" = r0,
       "gammas" = gammas,
       "lambdas" = lambdas,
-      "design" = design
+      "design" = design,
+      "sigma.r0" = sigma.r0,
+      "sigma.r1" = sigma.r1
     ),
     "assumptions" = list("conditionalVariation" = condVarAssump)
   )

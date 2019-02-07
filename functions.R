@@ -63,6 +63,11 @@ combine.results <- function(list1, list2) {
   
   valid      <- list1$valid + list2$valid
   
+  varFailCount <- c(list1$varFailCount, list2$varFailCount)
+  
+  sigma.r0 <- list1$sigma.r0 + list2$sigma.r0
+  sigma.r1 <- list1$sigma.r1 + list2$sigma.r1
+  
   condVars   <-
     Map(function(x, y) {
       x[is.na(x)] <- 0
@@ -105,6 +110,7 @@ combine.results <- function(list1, list2) {
       "param.var" = param.var,
       "rho.hat" = rho.hat,
       "valid" = valid,
+      "varFailCount" = varFailCount,
       "coverage" = coverage,
       "condVars" = condVars,
       "respCor" = respCor,
@@ -1088,6 +1094,8 @@ finalize.results <- function(x) {
   condCov              <- x$condCov / x$valid
   assumptionViolations <- lapply(x$assumptionViolations,
                                  function(v) v / x$valid)
+  sigma.r1             <- x$sigma.r1 / x$valid
+  sigma.r0             <- x$sigma.r0 / x$valid
   
   cat("Finishing...\n")
   
@@ -1102,10 +1110,13 @@ finalize.results <- function(x) {
       "pval" = x$pval,
       "param.hat" = param.hat,
       "sigma2.hat" = sigma2.hat,
+      "sigma.r1" = sigma.r1,
+      "sigma.r0" = sigma.r0,
       "iter" = x$iter,
       "param.var" = param.var,
       "rho.hat" = rho.hat,
       "valid" = x$valid,
+      "varFailCount" = x$varFailCount,
       "coverage" = coverage,
       "condVars" = condVars,
       "condVars" = condVars,
@@ -1791,9 +1802,10 @@ split.SMART <- function(d, marginal = FALSE) {
     names(l) <- grep("dtr", names(d), value = TRUE)
   } else {
     l <- split.data.frame(d, list(d$A1, d$R, d$A2R, d$A2NR))
-    x <- apply(unique(subset(d, select = c("A1", "R", "A2R", "A2NR"))), 1, function(v) {
-      paste(v, collapse = ".")
-    })
+    x <- apply(unique(subset(d, select = c("A1", "R", "A2R", "A2NR"))), 1,
+               function(v) {
+                 paste(v, collapse = ".")
+               })
     l <- lapply(1:length(x), function(i) l[[x[i]]])
     names(l) <- x
   }
