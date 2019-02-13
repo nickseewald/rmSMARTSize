@@ -271,63 +271,17 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       ## variance; i.e., v2.1.R.1 is the additional variance needed for 
       ## responders to A1=1 who are randomized to A2R=1
       
-      v2.1.R.1   <- sigma.r1^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
-      
-      sigma.nr11 <- sqrt((sigma^2 - r1 * sigma.r1^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.111[R.1 == 1]) -
-                                               mean(Y2.111[R.1 == 0]))^2) /
-                           (1 - r1))
-      v2.1.NR.1  <- sigma.nr11^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      
-      sigma.r10  <- sqrt((sigma^2 - (1 - r1) * sigma.nr11^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.101[R.1 == 1]) - 
-                                               mean(Y2.101[R.1 == 0]))^2) / r1)
-      v2.1.R.0   <- sigma.r10^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 1), var(Y0 + Y1.1))
-      
-      sigma.nr10 <- sqrt((sigma^2 - r1 * sigma.r10^2 - 
-                            r1*(1-r1) * with(d, mean(Y2.100[R.1 == 1]) -
-                                               mean(Y2.100[R.1 == 0]))^2) / 
-                           (1 - r1))
-      v2.1.NR.0  <- sigma.nr10^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.1 == 0), var(Y0 + Y1.1))
-      
-      v2.0.R.1   <- sigma.r0^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
-      
-      sigma.nr01 <- sqrt((sigma^2 - r0 * sigma.r0^2 - 
-                            r0*(1-r0) * with(d, mean(Y2.011[R.0 == 1]) -
-                                               mean(Y2.011[R.0 == 0]))^2) /
-                           (1 - r0))
-      v2.0.NR.1  <- sigma.nr01^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
-      
-      sigma.r00  <- sqrt((sigma^2 - (1 - r0) * sigma.nr01^2 -
-                            r0*(1-r0) * with(d, mean(Y2.001[R.0 == 1]) - 
-                                               mean(Y2.001[R.0 == 0]))^2) / r0)
-      v2.0.R.0   <- sigma.r00^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 1), var(Y0 + Y1.0))
-      
-      sigma.nr00 <- sqrt((sigma^2 - r0 * sigma.r00^2 - 
-                            r0*(1-r0) * with(d, mean(Y2.000[R.1 == 1]) -
-                                               mean(Y2.000[R.1 == 0]))^2) /
-                           (1 - r0))
-      
-      v2.0.NR.0  <- sigma.nr00^2 - 
-        (rho / (1 + rho))^2 * with(subset(d, R.0 == 0), var(Y0 + Y1.0))
       
       ## Add residuals at time 2
-      e2.1.R.1 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.1))
-      e2.1.R.0 <- rnorm(sum(d$R.1 == 1), 0, sqrt(v2.1.R.0))
-      e2.0.R.1 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.1))
-      e2.0.R.0 <- rnorm(sum(d$R.0 == 1), 0, sqrt(v2.0.R.0))
+      e2.1.R.1 <- rnorm(sum(d$R.1 == 1), 0, sqrt(variances$v2.1.R.1))
+      e2.1.R.0 <- rnorm(sum(d$R.1 == 1), 0, sqrt(variances$v2.1.R.0))
+      e2.0.R.1 <- rnorm(sum(d$R.0 == 1), 0, sqrt(variances$v2.0.R.1))
+      e2.0.R.0 <- rnorm(sum(d$R.0 == 1), 0, sqrt(variances$v2.0.R.0))
       
-      e2.1.NR.1 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.1))
-      e2.1.NR.0 <- rnorm(sum(d$R.1 == 0), 0, sqrt(v2.1.NR.0))
-      e2.0.NR.1 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.1))
-      e2.0.NR.0 <- rnorm(sum(d$R.0 == 0), 0, sqrt(v2.0.NR.0))
+      e2.1.NR.1 <- rnorm(sum(d$R.1 == 0), 0, sqrt(variances$v2.1.NR.1))
+      e2.1.NR.0 <- rnorm(sum(d$R.1 == 0), 0, sqrt(variances$v2.1.NR.0))
+      e2.0.NR.1 <- rnorm(sum(d$R.0 == 0), 0, sqrt(variances$v2.0.NR.1))
+      e2.0.NR.0 <- rnorm(sum(d$R.0 == 0), 0, sqrt(variances$v2.0.NR.0))
       
       d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R.0
       d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + e2.0.NR.0
@@ -387,20 +341,6 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       dtrTriples[dtrTriples == 0.5] <- 0
       dtrTriples <- apply(dtrTriples, 1, function(x) paste(x, collapse = ""))
       
-      varCheck <- 
-        do.call(c, 
-                lapply(dtrTriples, function(dtr) {
-                  index <- with(d, get(paste0("R.", substr(dtr, 1, 1))) == 0)
-                  x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
-                                       mean(get(paste0("Y2.", dtr))))^2))
-                }))
-      
-      if (any(varCheck > sigma^2)) {
-        condVarAssump <- 1
-      } else {
-        condVarAssump <- 0
-      }
-      
       # Randomize stage 2
       d$A2R <- 0
       d$A2NR <- 0
@@ -422,6 +362,20 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     } else {
       ## DESIGN 3
     }
+  }
+  
+  varCheck <- 
+    do.call(c, 
+            lapply(dtrTriples, function(dtr) {
+              index <- with(d, get(paste0("R.", substr(dtr, 1, 1))) == 0)
+              x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
+                                   mean(get(paste0("Y2.", dtr))))^2))
+            }))
+  
+  if (any(varCheck > sigma^2)) {
+    condVarAssump <- 1
+  } else {
+    condVarAssump <- 0
   }
   
   #### Assign weights and DTR indicators ####
