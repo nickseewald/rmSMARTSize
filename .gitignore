@@ -1,6 +1,7 @@
 *.RData
 *.Rhistory
 *.dcf
+*.pbs
 
 # Windows image file caches
 Thumbs.db
