@@ -138,12 +138,14 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   }
   
   # Compute conditional variances
-  varmats <- conditionalVarmat(times, spltime, design, r1, r0,
+  if (old) {
+    varmats <- conditionalVarmat(times, spltime, design, r1, r0,
                                corstr = corstr,
                                sigma, sigma.r1, sigma.r0,
                                uneqsd = NULL, uneqsdDTR = NULL,
                                rho, rho.r1, rho.r0,
                                gammas, lambdas)
+  }
   
   ## Construct string describing simulation parameters
   designText <- paste0("Design ", design, "\n",
@@ -223,8 +225,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                   "condCov" = matrix(rep(0, nrow(
                     expand.grid(times[times <= spltime], 
                                 times[times > spltime])) * 2),
-                    ncol = 2),
-                  "assumptionViolations" = d$assumptions
+                    ncol = 2)
+                  # "assumptionViolations" = d$assumptions
                 )
                 
                 if (save.data) {
@@ -392,8 +394,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                     "iter" = iter,
                     "sigma.r0" = d$params$sigma.r0,
                     "sigma.r1" = d$params$sigma.r1,
-                    "condVars" = condVars,
-                    "assumptionViolations" = d$assumptions
+                    "condVars" = condVars
+                    # "assumptionViolations" = d$assumptions
                   )
                 
                 if (save.data) {

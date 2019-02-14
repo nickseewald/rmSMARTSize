@@ -92,14 +92,14 @@ combine.results <- function(list1, list2) {
     },
     list(list1$condCov, list2$condCov))
   
-  assumptionViolations <-
-    Map(function(x, y) {
-      x[is.na(x)] <- 0
-      y[is.na(y)] <- 0
-      x + y
-    },
-    list1$assumptionViolations,
-    list2$assumptionViolations)
+  # assumptionViolations <-
+  #   Map(function(x, y) {
+  #     x[is.na(x)] <- 0
+  #     y[is.na(y)] <- 0
+  #     x + y
+  #   },
+  #   list1$assumptionViolations,
+  #   list2$assumptionViolations)
   
   result <-
     list(
@@ -114,8 +114,8 @@ combine.results <- function(list1, list2) {
       "coverage" = coverage,
       "condVars" = condVars,
       "respCor" = respCor,
-      "condCov" = condCov,
-      "assumptionViolations" = assumptionViolations
+      "condCov" = condCov
+      # "assumptionViolations" = assumptionViolations
     )
   
   if ("data" %in% names(list1)) {
@@ -1092,8 +1092,8 @@ finalize.results <- function(x) {
   condVars             <- lapply(x$condVars, function(v) v / x$valid)
   respCor              <- x$respCor / x$valid
   condCov              <- x$condCov / x$valid
-  assumptionViolations <- lapply(x$assumptionViolations,
-                                 function(v) v / x$valid)
+  # assumptionViolations <- lapply(x$assumptionViolations,
+  #                                function(v) v / x$valid)
   sigma.r1             <- x$sigma.r1 / x$valid
   sigma.r0             <- x$sigma.r0 / x$valid
   
@@ -1121,8 +1121,8 @@ finalize.results <- function(x) {
       "condVars" = condVars,
       "condVars" = condVars,
       "respCor" = respCor,
-      "condCov" = condCov,
-      "assumptionViolations" = assumptionViolations
+      "condCov" = condCov
+      # "assumptionViolations" = assumptionViolations
     )
   
   if ("data" %in% names(x))

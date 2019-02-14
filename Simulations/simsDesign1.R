@@ -87,6 +87,7 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
+
 save(file = here("Results", "simsDesign1-delta3-basic.RData"),
      list = c("sigma", "simGrid.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))

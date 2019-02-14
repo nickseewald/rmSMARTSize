@@ -80,9 +80,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   }
   
   ## Make sure design input is valid
-  # if (!(design %in% 1:3)) stop("Invalid design choice. Must be one of 1-3.")
-  if (design != 2) 
-    stop("New generative model structure only implemented for design 2")
+  if (!(design %in% 1:3)) stop("Invalid design choice. Must be one of 1-3.")
+  # if (design != 2) 
+  #   stop("New generative model structure only implemented for design 2")
   
   dtrTriples <- dtrNames(design)
   
@@ -208,25 +208,6 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                    x
                  })
     )
-    
-    # Check variance assumption:
-    sigma.r1.LB <- 
-      sqrt(
-        sigma^2 + 
-          ((1 - r1) / r1) * (mean(d$Y2[d$R == 0]) - mean(d$Y2))^2 -
-          (mean(d$Y2[d$R == 1]) - mean(d$Y2[d$R == 0]))^2
-      )
-    sigma.r0.LB <- 
-      sqrt(
-        sigma^2 + 
-          ((1 - r0) / r0) * (mean(d$Y2[d$R == 0]) - mean(d$Y2))^2 -
-          (mean(d$Y2[d$R == 1]) - mean(d$Y2[d$R == 0]))^2)
-    
-    if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
-      condVarAssump <- 1
-    } else
-      condVarAssump <- 0
-    
   } else {
     #### UPDATED GENERATIVE MODEL ####
     ## Initialize data frame
@@ -250,21 +231,6 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     
     if (design == 1) {
       ## Time 2 variances
-      
-      # Check variance assumption:
-      sigma.r1.LB <- 
-        sqrt(sigma^2 + ((1 - r1) / r1) * 
-               (mean(d$Y2.111[d$R.1 == 0]) - mean(d$Y2.111))^2 -
-               (mean(d$Y2.111[d$R.1 == 1]) - mean(d$Y2.111[d$R.1 == 0]))^2)
-      sigma.r0.LB <- 
-        sqrt(sigma^2 + ((1 - r0) / r0) * 
-               (mean(d$Y2.000[d$R.0 == 0]) - mean(d$Y2.000))^2 -
-               (mean(d$Y2.000[d$R.0 == 1]) - mean(d$Y2.000[d$R.0 == 0]))^2)
-      
-      if (sigma.r1 < sigma.r1.LB | sigma.r0 < sigma.r0.LB) {
-        condVarAssump <- 1
-      } else
-        condVarAssump <- 0
       
       # Notation: 
       ## v2.(stage1).(R/NR).(stage2 given response) refers to *residual* 
@@ -429,8 +395,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
         "design" = design,
         "sigma.r0" = sigma.r0,
         "sigma.r1" = sigma.r1
-      ),
-      "assumptions" = list("conditionalVariation" = NULL)
+      )
+      # "assumptions" = list("conditionalVariation" = NULL)
     ))
   }
   
@@ -448,8 +414,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       "design" = design,
       "sigma.r0" = sigma.r0,
       "sigma.r1" = sigma.r1
-    ),
-    "assumptions" = list("conditionalVariation" = condVarAssump)
+    )
+    # "assumptions" = list("conditionalVariation" = condVarAssump)
   )
   class(output) <- c('generateSMART', class(output))
   return(output)
