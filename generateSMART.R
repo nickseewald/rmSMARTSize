@@ -316,7 +316,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       ## Time 2 variances
       
       e2.0.R <- rnorm(sum(d$R.0), 0, sqrt(variances$v2.0.R.0))
-      e2.1.R <- rnorm(sum(d$R.1), 0, sqrt(variances$v2.1.R.0))
+      e2.1.R <- rnorm(sum(d$R.1), 0, sqrt(variances$v2.1.R.1))
       
       d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] + e2.0.R
       d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + 

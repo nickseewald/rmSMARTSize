@@ -148,7 +148,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   ## Construct string describing simulation parameters
   designText <- paste0("Design ", design, "\n",
                        ifelse(is.null(postIdentifier), "", postIdentifier),
-                       "delta = ", delta, "\n",
+                       "\ndelta = ", delta, "\n",
                        "true corstr = ", corstr, "(", rho, ")\n",
                        "sized for exchangeable(", rho.size, ")\n",
                        "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3),
@@ -185,8 +185,6 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
               if (d$valid == FALSE) {
                 ## If a non-valid trial has been generated (i.e., fewer than one
                 ## observation per cell), return a "blank" result
-                
-                cat("actually not valid ")
                 
                 sigma2.blank <-
                   matrix(

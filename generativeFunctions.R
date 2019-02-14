@@ -267,7 +267,7 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
     } else if (a1 %in% c(0, -1)) {
       # FIXME: I think....
       dtr1 <- "000"
-      dtr2 <- "010"
+      dtr2 <- "001"
     } else {
       stop("Invalid choice of a1: must be one of 0, 1, or -1")
     }
@@ -317,30 +317,62 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
   }
 }
 
+#' Title
+#'
+#' @param simGrid 
+#' @param times 
+#' @param spltime 
+#' @param gammas 
+#' @param sigma 
+#' @param corstr 
+#' @param design 
+#' @param balanceRand 
+#' @param varCombine A function of one vector argument which describes how to
+#' choose sigma.rX from the lower and upper bounds. It's assumed that the
+#' function will be able to handle vectors of length two in which the elements
+#' are c(`<lower bound>`, `<upper bound>`). Defaults to `mean`. 
+#' @param empirical 
+#' @param seed 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
-                                    corstr, design, balanceRand = F, 
-                                    empirical = F, seed = 6781) {
+                           corstr, design, balanceRand = F,
+                           varCombine = mean,
+                           empirical = F, seed = 6781) {
   
   if (design == 3) stop("computeVarGrid doesn't yet work for design 3")
   
+  if (is.list(varCombine) & length(varCombine) == 2) {
+    varCombine.11 <- varCombine[[1]]
+    varCombine.00 <- varCombine[[2]]
+  } else if (is.list(varCombine) & length(varCombine) == 1) {
+    varCombine.11 <- varCombine.00 <- varCombine[[1]]
+  } else {
+    varCombine.11 <- varCombine.00 <- varCombine
+  }
+  
   # Get names for variances to create
   dtrTriples <- dtrNames(design)
-  rNames <- unique(sapply(dtrTriples, function(x) paste0(substr(x, 1, 2))))
   nrNames <- unique(sapply(dtrTriples, function(x) 
     paste0(substr(x, 1, 1), substr(x, 3, 3))))
   dtrs <- do.call(rbind, dtrIndex(design))
   
   if (design == 1) {
+    rNames <- unique(sapply(dtrNames(1), function(x) paste0(substr(x, 1, 2))))
     varOrder <- data.frame("genPair" = c("11", "10", "10", "00", "01", "01"),
                            "refPair" = c(rep("11", 3), rep("00", 3)),
                            "genR"    = rep(c("nr", "r", "nr"), 2))
   } else if (design == 2) {
+    rNames <- c("11", "00")
     varOrder <- data.frame("genPair" = c("11", "10", "01", "00"),
                            "refPair" = c("11", "11", "00", "00"),
                            "genR"    = rep("nr", 4))
+  } else if (design == 3) {
+    rNames <- c("11", "00")
   }
-  
-  
   
   # Create an environment to store variances created in loops
   # (This is to simplify scoping)
@@ -349,7 +381,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
   # Reconstruct simGrid, adding appropriate values
   sg <- foreach(i = 1:nrow(simGrid), .combine = rbind, .inorder = TRUE, 
                 .export = ls(envir = .GlobalEnv)
-  ) %do% {
+  ) %dorng% {
     
     if (!is.null(seed)) set.seed(seed)
     
@@ -384,12 +416,14 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     sigma.r0.LB <- computeVarBound(0, s, design, sigma, r0, rho, corstr)
     sigma.r0.UB <- computeVarBound(0, s, design, sigma, r0, rho, corstr, 
                                    bound = "upper")
-    assign("sigma.r00", mean(c(sigma.r0.LB, sigma.r0.UB)), envir = varEnv)
+    assign("sigma.r00", varCombine.00(c(sigma.r0.LB, sigma.r0.UB)),
+           envir = varEnv)
     
     sigma.r1.LB <- computeVarBound(1, s, design, sigma, r1, rho, corstr)
     sigma.r1.UB <- computeVarBound(1, s, design, sigma, r1, rho, corstr, 
                                    bound = "upper")
-    assign("sigma.r11", mean(c(sigma.r1.LB, sigma.r1.UB)), envir = varEnv)
+    assign("sigma.r11", varCombine.11(c(sigma.r1.LB, sigma.r1.UB)),
+           envir = varEnv)
     
     # If the upper bound is below the lower bound, choose sigma.rX to be 
     # below the upper bound to avoid errors (note that this violates the
@@ -450,7 +484,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     for (index in rNames) {
       Y1 <- with(s, get(paste0("Y1.", substr(index, 1, 1))))
       R <- with(s, get(paste0("R.", substr(index, 1, 1))))
-      sigma.r <- get(paste0("sigma.r", substr(index, 1, 1)), env = varEnv)
+      sigma.r <- get(paste0("sigma.r", index), env = varEnv)
       
       assign(paste0("v2.", substr(index, 1, 1), ".R.", substr(index, 2, 2)),
              sigma.r^2 - (rho / (1 + rho))^2 * var(s$Y0[R == 1] + Y1[R == 1]),
@@ -467,4 +501,6 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
   
   sg
 }
+
+
 
