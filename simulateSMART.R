@@ -182,7 +182,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                  balanceRand = balanceRand, 
                                  empirical = empirical,
                                  respFunction = respFunction,
-                                 respDirection = respDirection, ...)
+                                 respDirection = respDirection)#, ...)
               
               if (d$valid == FALSE) {
                 ## If a non-valid trial has been generated (i.e., fewer than one
@@ -242,20 +242,14 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                               ids = d$data$id, 
                               times = times, direction = "long", v.names = "Y")
                 d1 <- d1[order(d1$id, d1$time), ]
-                
-                cat('d1Sorted ')
-                
+
                 # Check working assumption re: correlation between response and
                 # products of residuals
                 respCor <- estimate.respCor(d$data, design, times, spltime, 
                                             gammas)
                 
-                cat('respCorComputed ')
-                
                 condCov <- estimate.condCov(d1, times, spltime,
                                             design, pool.dtr = T)
-                
-                cat('condCovComputed ')
                 
                 param.hat <-
                   tryCatch(estimate.params(d1,
@@ -266,9 +260,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                   rep(0, length(gammas)),
                                   maxiter.solver,
                                   tol))
-                
-                cat(paste0("paramHatEstimatedIteration", i, "\n"))
-                
+                message('param.hat')
                 # param.hat2 <-
                 #   multiroot(
                 #     esteqn.compute,
@@ -288,10 +280,13 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                               param.hat,
                                               pool.time = pool.time,
                                               pool.dtr = pool.dtr)
+                message('sigma2.hat')
                 
                 rho.hat <-
                   estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat),
                                param.hat, corstr = "exchangeable")
+                
+                message('\nrho.hat')
                 
                 # Compute variance matrices for all conditional cells
                 condVars <- lapply(split.SMART(d$data), function(x) {

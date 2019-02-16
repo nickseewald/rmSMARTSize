@@ -35,6 +35,10 @@ checkSMART <- function(smart) {
 
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
+  
+  if (length(list1) == 0 | length(list2) == 0)
+    cat('uh-oh')
+  
   pval       <- c(list1$pval, list2$pval)
   
   param.hat  <- rbind(list1$param.hat, list2$param.hat)
@@ -1513,6 +1517,9 @@ resultTable <- function(results,
                         paper = FALSE) {
   alternative <- match.arg(alternative)
   
+  if (is.null(names(results)))
+    stop("results must be a named list.")
+  
   d <- do.call("rbind", lapply(results, function(l) {
     if (alternative == "two.sided") {
       pval.power <- l$pval.power
@@ -1572,13 +1579,14 @@ resultTable <- function(results,
   d$respFunc <- resNames
   d <- d[, c("delta", "respFunc", names(d)[2:(ncol(d) - 1)])]
   
-  d <- d[order(d$delta, d$respFunc, d$r0, d$r1, d$rho, d$sharp), ]
+  d <- d[order(d$delta, d$respFunc,
+               d$r0, d$r1, d$rho, d$sharp), ]
   
   oldColnames <- colnames(d)
   
   colnames(d) <- c("$\\delta$", 
                    "Resp. Func.",
-                   # "$\\min\\left\\{r_{-1},r_{1}\\right\\}$",
+                   "$\\min\\left\\{r_{-1},r_{1}\\right\\}$",
                    "$r_{-1}$",
                    "$r_{1}$",
                    "$\\rho$",
@@ -1593,7 +1601,7 @@ resultTable <- function(results,
     
   }
   
-  print(xtable(d, digits = c(1,1,0,1,1,1,1,1,0,3,3,3,3,3,3,3,0,0)),
+  print(xtable(d, digits = c(1,0,1,1,1,1,1,0,3,3,3,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,
         include.rownames = F,
         include.colnames = T,

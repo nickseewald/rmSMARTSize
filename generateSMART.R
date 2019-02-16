@@ -85,7 +85,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   #   stop("New generative model structure only implemented for design 2")
   
   dtrTriples <- dtrNames(design)
-  
+
   #### LEGACY GENERATIVE MODEL ####
   if (old) {
     
@@ -277,6 +277,41 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$A2NR <- d$A2R  <- 0
       d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
       d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+      
+      # Assign weights
+      d$weight <- 4
+      
+      # Construct DTR consistency indicators
+      d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
+      d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
+      d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
+      d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
+      d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
+      d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
+      d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
+      d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
+      
+      # Select potential Y2 value to observe based on randomization
+      d$Y2 <- NA
+      
+      # Responders, dtr1 & dtr2
+      d$Y2[d$dtr1 == 1 & d$R == 1] <- d$Y2.111[d$dtr1 == 1 & d$R == 1]
+      # Responders, dtr3 & dtr4
+      d$Y2[d$dtr4 == 1 & d$R == 1] <- d$Y2.100[d$dtr4 == 1 & d$R == 1]
+      # Non-responders, dtr1 & dtr3
+      d$Y2[d$dtr3 == 1 & d$R == 0] <- d$Y2.101[d$dtr3 == 1 & d$R == 0]
+      # Non-responders, dtr2 & dtr4
+      d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.110[d$dtr2 == 1 & d$R == 0]
+      
+      # Responders, dtr5 & dtr6
+      d$Y2[d$dtr5 == 1 & d$R == 1] <- d$Y2.011[d$dtr5 == 1 & d$R == 1]
+      # Responders, dtr7 & dtr8
+      d$Y2[d$dtr8 == 1 & d$R == 1] <- d$Y2.000[d$dtr8 == 1 & d$R == 1]
+      # Non-responders, dtr5 & dtr7
+      d$Y2[d$dtr7 == 1 & d$R == 0] <- d$Y2.001[d$dtr7 == 1 & d$R == 0]
+      # Non-responders, dtr6 & dtr8
+      d$Y2[d$dtr6 == 1 & d$R == 0] <- d$Y2.010[d$dtr6 == 1 & d$R == 0]
+      
     } else if (design == 2) {
       ## DESIGN 2
       ## Time 2 variances
@@ -329,33 +364,24 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       ## DESIGN 3
     }
   }
-  
-  varCheck <- 
-    do.call(c, 
-            lapply(dtrTriples, function(dtr) {
-              index <- with(d, get(paste0("R.", substr(dtr, 1, 1))) == 0)
-              x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
-                                   mean(get(paste0("Y2.", dtr))))^2))
-            }))
-  
-  if (any(varCheck > sigma^2)) {
-    condVarAssump <- 1
-  } else {
-    condVarAssump <- 0
-  }
+  # 
+  # varCheck <- 
+  #   do.call(c, 
+  #           lapply(dtrTriples, function(dtr) {
+  #             index <- with(d, get(paste0("R.", substr(dtr, 1, 1))) == 0)
+  #             x <- with(d, mean((get(paste0("Y2.", dtr))[index] -
+  #                                  mean(get(paste0("Y2.", dtr))))^2))
+  #           }))
+  # 
+  # if (any(varCheck > sigma^2)) {
+  #   condVarAssump <- 1
+  # } else {
+  #   condVarAssump <- 0
+  # }
   
   #### Assign weights and DTR indicators ####
   if (design == 1) {
-    d$weight <- 4
     
-    d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
-    d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
-    d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
-    d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
-    d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
-    d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
-    d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
-    d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
   } else if (design == 2) {
     d$weight <- 2 * (d$R + 2 * (1 - d$R))
     

@@ -92,7 +92,7 @@ save(file = here("Results", "simsDesign1-delta3-basic.RData"),
      list = c("sigma", "simGrid.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
-for (i in 1:nrow(simGrid.delta3)) {
+for (scenario in 1:nrow(simGrid.delta3)) {
   # Extract simulation conditions from simGrid.delta3
   r0 <- simGrid.delta3$r0[scenario]
   r1 <- simGrid.delta3$r1[scenario]

@@ -122,7 +122,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
        simGrid.delta3$sigma.r0.UB[scenario]) |
       (simGrid.delta3$sigma.r1.LB[scenario] >
        simGrid.delta3$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design ", design, "\n",
+    designText <- paste0("Design 2\n",
                          ifelse(is.null(postIdentifier), NULL, postIdentifier),
                          "delta = ", delta, "\n",
                          "true corstr = ", corstr, "(", rho, ")\n",
@@ -178,10 +178,12 @@ for (scenario in 1:nrow(simGrid.delta3)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.3\n",
-                   "for basic scenarios."))
-
+if (notify) {
+  x <- paste("All simulations are complete for effect size 0.3\n",
+             "for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 
 ##### Effect size: 0.5 #####
@@ -241,7 +243,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
        simGrid.delta5$sigma.r0.UB[scenario]) |
       (simGrid.delta5$sigma.r1.LB[scenario] >
        simGrid.delta5$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design ", design, "\n",
+    designText <- paste0("Design 2\n",
                          ifelse(is.null(postIdentifier), "", postIdentifier),
                          "delta = ", delta, "\n",
                          "true corstr = ", corstr, "(", rho, ")\n",
@@ -294,9 +296,12 @@ for (scenario in 1:nrow(simGrid.delta5)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.5\n",
-                   "for basic scenarios."))
+if (notify){
+  x <- paste("All simulations are complete for effect size 0.5\n",
+             "for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 
 ##### Effect size: 0.8 #####
@@ -356,7 +361,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
        simGrid.delta8$sigma.r0.UB[scenario]) |
       (simGrid.delta8$sigma.r1.LB[scenario] >
        simGrid.delta8$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design ", design, "\n",
+    designText <- paste0("Design 2\n",
                          ifelse(is.null(postIdentifier), NULL, postIdentifier),
                          "delta = ", delta, "\n",
                          "true corstr = ", corstr, "(", rho, ")\n",
@@ -408,9 +413,13 @@ for (scenario in 1:nrow(simGrid.delta8)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.8\n",
-                   "for basic scenarios."))
+if (notify) {
+  x <- paste("All simulations are complete for effect size 0.8\n",
+             "for basic scenarios.")
+  slackr_bot(x)
+  slackr_bot("Shutting down the cluster.")
+  rm(x)
+}
 
 if(check.dompi) {
   closeCluster(clus)

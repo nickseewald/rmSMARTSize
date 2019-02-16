@@ -2,6 +2,7 @@
 *.Rhistory
 *.dcf
 *.pbs
+*.here
 
 # Windows image file caches
 Thumbs.db
