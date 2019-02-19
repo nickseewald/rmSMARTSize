@@ -46,8 +46,8 @@ simGrid <- expand.grid(list(
   corr = c(0, .3, .6, .8),
   oldModel = c(FALSE, TRUE),
   respFunction = list("indep" = "response.indep", "beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT")
-  # respDirection = c("high", "low")
+                      "oneT" = "response.oneT", "twoT" = "response.twoT"),
+  respDirection = c("high", "low")
 ))
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
