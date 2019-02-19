@@ -45,7 +45,7 @@ simGrid <- expand.grid(list(
   r1 = c(.4, .6),
   corr = c(0, .3, .6, .8),
   oldModel = c(FALSE, TRUE),
-  respFunction = list("indep" = "response.indep", "beta" = "response.beta",
+  respFunction = list("beta" = "response.beta",
                       "oneT" = "response.oneT", "twoT" = "response.twoT")
   # respDirection = c("high", "low")
 ))
@@ -117,18 +117,26 @@ for (scenario in 1:nrow(simGrid.delta3)) {
     r0 <- pnorm(upsilon, sum(gammas[1:2]) - gammas[3], sigma,
                 lower.tail = FALSE)
   }
+  
+  postID <- paste0(
+    "Basic simulation setup\n",
+    "Effect size: 0.3\n",
+    "Response function:",
+    respFunc.name,
+    "\n",
+    ifelse(sharp, "sharp n",
+           "conservative n")
+  )
 
   if ((simGrid.delta3$sigma.r0.LB[scenario] >
        simGrid.delta3$sigma.r0.UB[scenario]) |
       (simGrid.delta3$sigma.r1.LB[scenario] >
        simGrid.delta3$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
-                         ifelse(is.null(postIdentifier), NULL, postIdentifier),
-                         "delta = ", delta, "\n",
-                         "true corstr = ", corstr, "(", rho, ")\n",
-                         "sized for exchangeable(", rho.size, ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3),
-                         "\nn = ", n)
+                         postID,
+                         "delta = 0.3\n",
+                         "true corstr = exchangeable(", corr[1], ")\n",
+                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
     if (notify) slackr_bot(designText)
     warnText <- paste("It is not possible to not violate the conditional",
                       "variation working assumption in this scenario.",
@@ -159,15 +167,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
                          # respDirection = respDir,
                          niter = niter, notify = notify,
                          old = old,
-                         postIdentifier = paste0(
-                           "Basic simulation setup\n",
-                           "Effect size: 0.3\n",
-                           "Response function:",
-                           respFunc.name,
-                           "\n",
-                           ifelse(sharp, "sharp n",
-                                  "conservative n")
-                         ))),
+                         postIdentifier = postID)),
          envir = .GlobalEnv)
 
   # Save the result
@@ -184,6 +184,8 @@ if (notify) {
   slackr_bot(x)
   rm(x)
 }
+
+rm(list = grep("d2_delta3", ls(), value = T))
 
 
 ##### Effect size: 0.5 #####
@@ -239,17 +241,25 @@ for (scenario in 1:nrow(simGrid.delta5)) {
                 lower.tail = FALSE)
   }
   
+  postID <- paste0(
+    "Basic simulation setup\n",
+    "Effect size: 0.5\n",
+    "Response function:",
+    respFunc.name,
+    "\n",
+    ifelse(sharp, "sharp n",
+           "conservative n")
+  )
+  
   if ((simGrid.delta5$sigma.r0.LB[scenario] >
        simGrid.delta5$sigma.r0.UB[scenario]) |
       (simGrid.delta5$sigma.r1.LB[scenario] >
        simGrid.delta5$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
-                         ifelse(is.null(postIdentifier), "", postIdentifier),
-                         "delta = ", delta, "\n",
-                         "true corstr = ", corstr, "(", rho, ")\n",
-                         "sized for exchangeable(", rho.size, ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3),
-                         "\nn = ", n)
+                         postID,
+                         "delta = 0.5\n",
+                         "true corstr = exchangeable(", corr[1], ")\n",
+                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
     slackr_bot(designText)
     warnText <- paste("It is not possible to not violate the conditional",
                       "variation working assumption in this scenario.",
@@ -277,16 +287,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
                          # respDirection = respDir,
                          niter = niter, notify = notify,
                          old = old,
-                         postIdentifier = paste0(
-                           "Basic simulation setup\n",
-                           "Effect size: 0.5\n",
-                           "Response function:",
-                           respFunc.name,
-                           "\n",
-                           ifelse(sharp, "sharp n",
-                                  "conservative n")
-                         )
-           )),
+                         postIdentifier = postID)),
            envir = .GlobalEnv)
   
   save(file = here("Results", "simsDesign2-delta5-sLBup10.RData"),
@@ -303,6 +304,7 @@ if (notify){
   rm(x)
 }
 
+rm(list = grep("d2_delta5", ls(), value = T))
 
 ##### Effect size: 0.8 #####
 
@@ -357,26 +359,33 @@ for (scenario in 1:nrow(simGrid.delta8)) {
                 lower.tail = FALSE)
   }
   
+  postID <- paste0(
+    "Basic simulation setup\n",
+    "Effect size: 0.8\n",
+    "Response function:",
+    respFunc.name,
+    "\n",
+    ifelse(sharp, "sharp n",
+           "conservative n")
+  )
+  
   if ((simGrid.delta8$sigma.r0.LB[scenario] >
        simGrid.delta8$sigma.r0.UB[scenario]) |
       (simGrid.delta8$sigma.r1.LB[scenario] >
        simGrid.delta8$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
-                         ifelse(is.null(postIdentifier), NULL, postIdentifier),
-                         "delta = ", delta, "\n",
-                         "true corstr = ", corstr, "(", rho, ")\n",
-                         "sized for exchangeable(", rho.size, ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3),
-                         "\nn = ", n)
-    if (notify) slackr_bot(designText)
+                         postID,
+                         "delta = 0.8\n",
+                         "true corstr = exchangeable(", corr[1], ")\n",
+                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
+    slackr_bot(designText)
     warnText <- paste("It is not possible to not violate the conditional",
                       "variation working assumption in this scenario.",
                       "Skipping for now...")
     assign(simGrid.delta8$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
+    slackr_bot(warnText)
     next
   }
-  
   set.seed(seed)
   
   assign(simGrid.delta8$simName[scenario],
@@ -395,16 +404,8 @@ for (scenario in 1:nrow(simGrid.delta8)) {
                          # respDirection = respDir,
                          niter = niter, notify = notify,
                          old = old,
-                         postIdentifier = paste0(
-                           "Basic simulation setup\n",
-                           "Effect size: 0.8\n",
-                           "Response function:",
-                           respFunc.name,
-                           "\n",
-                           ifelse(sharp, "sharp n",
-                                  "conservative n")
-                         )
-           )), envir = .GlobalEnv)
+                         postIdentifier = postID)),
+         envir = .GlobalEnv)
 
   save(file = here("Results", "simsDesign2-delta8-sLBup10.RData"),
        list = c(grep("d2_delta8", ls(), value = T), "sigma",
