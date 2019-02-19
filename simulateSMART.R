@@ -141,7 +141,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   if (old) {
     varmats <- conditionalVarmat(times, spltime, design, r1, r0,
                                corstr = corstr,
-                               sigma, sigma.r1, sigma.r0,
+                               sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
                                uneqsd = NULL, uneqsdDTR = NULL,
                                rho, rho.r1, rho.r0,
                                gammas, lambdas)
@@ -220,7 +220,8 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                         matrix(0, ncol = length(times),
                                                nrow = length(times))),
                   "respCor" = matrix(rep(0, 
-                                         combn(times[times <= spltime], 2) * 2),
+                                         ncol(combn(times[times <= spltime], 2))
+                                         * 2),
                                      ncol = 2),
                   "condCov" = matrix(rep(0, nrow(
                     expand.grid(times[times <= spltime], 
@@ -232,7 +233,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 if (save.data) {
                   result[["data"]] <- list(d$data)
                 }
-                
+                cat('invalid')
                 return(result)
                 
               } else {
@@ -373,7 +374,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 pval <-
                   1 - pnorm(as.numeric((L %*% param.hat) / 
                                          sqrt(L %*% param.var %*% L)))
-                
+                cat("\npval")
                 result <-
                   list(
                     "pval" = pval,
@@ -396,7 +397,6 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 if (save.data) {
                   result[["data"]] <- list(d$data)
                 }
-                
                 return(result)
               }
             }

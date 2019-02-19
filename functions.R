@@ -36,8 +36,13 @@ checkSMART <- function(smart) {
 ### Custom combine function for the foreach %dopar% loop in sim()
 combine.results <- function(list1, list2) {
   
-  if (length(list1) == 0 | length(list2) == 0)
-    cat('uh-oh')
+  if (length(list1) == 0 & length(list2) == 0) {
+    stop('both lists are zero')
+  } else if (length(list1) == 0) {
+    return(list2)
+  } else if (length(list2) == 0) {
+    return(list1)
+  } else {
   
   pval       <- c(list1$pval, list2$pval)
   
@@ -128,6 +133,7 @@ combine.results <- function(list1, list2) {
   }
   
   return(result)
+  }
 }
 
 compute.effectSize <- function(gammas, sigma, design, L) {
@@ -1586,7 +1592,7 @@ resultTable <- function(results,
   
   colnames(d) <- c("$\\delta$", 
                    "Resp. Func.",
-                   "$\\min\\left\\{r_{-1},r_{1}\\right\\}$",
+                   # "$\\min\\left\\{r_{-1},r_{1}\\right\\}$",
                    "$r_{-1}$",
                    "$r_{1}$",
                    "$\\rho$",
@@ -1601,7 +1607,7 @@ resultTable <- function(results,
     
   }
   
-  print(xtable(d, digits = c(1,0,1,1,1,1,1,0,3,3,3,3,3,3,3,0,0)),
+  print(xtable(d, digits = c(1,1,0,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0)),
         sanitize.text.function = identity, booktabs = TRUE,
         include.rownames = F,
         include.colnames = T,

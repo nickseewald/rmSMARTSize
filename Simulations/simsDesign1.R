@@ -46,8 +46,8 @@ simGrid <- expand.grid(list(
   corr = c(0, .3, .6, .8),
   oldModel = c(FALSE, TRUE),
   respFunction = list("indep" = "response.indep", "beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT"),
-  respDirection = c("high", "low")
+                      "oneT" = "response.oneT", "twoT" = "response.twoT")
+  # respDirection = c("high", "low")
 ))
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
@@ -104,8 +104,8 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   old <- simGrid.delta3$oldModel[scenario]
   
   # Extract variances from simGrid
-  sigma.r0 <- simGrid.delta3$sigma.r0[scenario]
-  sigma.r1 <- simGrid.delta3$sigma.r1[scenario]
+  sigma.r0 <- simGrid.delta3$sigma.r00[scenario]
+  sigma.r1 <- simGrid.delta3$sigma.r11[scenario]
   vars <- simGrid.delta3[scenario, 
                          c(grep("^sigma.nr[0-9].", names(simGrid.delta3)),
                            grep("^v2\\.", names(simGrid.delta3)))]
@@ -179,11 +179,12 @@ for (scenario in 1:nrow(simGrid.delta3)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for Design 1,", 
-                   "effect size 0.3\n for basic scenarios."))
-
-
+if (notify) {
+  x <- paste("All simulations are complete for Design 1,", 
+             "effect size 0.3\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 ##### Effect size: 0.5 #####
 
@@ -294,9 +295,12 @@ for (scenario in 1:nrow(simGrid.delta5)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for Design 1,", 
-                   "effect size 0.5\n for basic scenarios"))
+if (notify) {
+  x <- paste("All simulations are complete for Design 1,", 
+             "effect size 0.5\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 
 ##### Effect size: 0.8 #####
@@ -409,9 +413,12 @@ for (scenario in 1:nrow(simGrid.delta8)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for Design 1,", 
-                   "effect size 0.8\n for basic scenarios"))
+if (notify) {
+  x <- paste("All simulations are complete for Design 1,", 
+             "effect size 0.8\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 if(check.dompi) {
   closeCluster(clus)
