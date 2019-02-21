@@ -61,10 +61,11 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                           rho = NULL, rho.r1 = rho, rho.r0 = rho,
                           uneqsdDTR = NULL, uneqsd = NULL,
                           varmats = NULL, variances = NULL,
-                          respDirection = NULL, respFunction,
+                          respDirection = c("high", "low"), respFunction,
                           empirical = FALSE, old = FALSE) {
   
   call <- match.call()
+  respDirection <- match.arg(respDirection)
   
   ## Input Checks
   if (sum(times > spltime) == 0) 

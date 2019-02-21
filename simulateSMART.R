@@ -75,27 +75,51 @@
 #' @examples
 
 
-simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
-                          alpha = .05, power = .8, delta, design = 2, 
+simulateSMART <- function(n = NULL,
+                          gammas,
+                          lambdas,
+                          times,
+                          spltime,
+                          alpha = .05,
+                          power = .8,
+                          delta,
+                          design = 2,
                           rounding = "up",
                           conservative = TRUE,
-                          r = NULL, r1 = r, r0 = r,
-                          uneqsdDTR = NULL, uneqsd = NULL, 
-                          sigma, sigma.r1 = sigma, sigma.r0 = sigma,
+                          r = NULL,
+                          r1 = r,
+                          r0 = r,
+                          uneqsdDTR = NULL,
+                          uneqsd = NULL,
+                          sigma,
+                          sigma.r1 = sigma,
+                          sigma.r0 = sigma,
                           corstr = c("identity", "exchangeable", "ar1"),
-                          rho = NULL, rho.r1 = rho, rho.r0 = rho, 
+                          rho = NULL,
+                          rho.r1 = rho,
+                          rho.r0 = rho,
                           rho.size = rho,
-                          L = NULL, varmats = NULL, variances = NULL,
+                          L = NULL,
+                          varmats = NULL,
+                          variances = NULL,
                           respFunction = response.oneT,
                           respDirection = c("high", "low"),
-                          pool.time = TRUE, pool.dtr = TRUE,
-                          niter = 5000, tol = 1e-8, maxiter.solver = 1000,
-                          save.data = FALSE, empirical = FALSE, 
+                          pool.time = TRUE,
+                          pool.dtr = TRUE,
+                          niter = 5000,
+                          tol = 1e-8,
+                          maxiter.solver = 1000,
+                          save.data = FALSE,
+                          empirical = FALSE,
                           balanceRand = FALSE,
-                          notify = FALSE, pbDevice = NULL, 
-                          postIdentifier = NULL, ...) {
+                          notify = FALSE,
+                          pbDevice = NULL,
+                          postIdentifier = NULL,
+                          ...
+) {
   
   call <- match.call()
+  respDirection <- match.arg(respDirection)
   
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) 
@@ -140,11 +164,11 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
   # Compute conditional variances
   if (old) {
     varmats <- conditionalVarmat(times, spltime, design, r1, r0,
-                               corstr = corstr,
-                               sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
-                               uneqsd = NULL, uneqsdDTR = NULL,
-                               rho, rho.r1, rho.r0,
-                               gammas, lambdas)
+                                 corstr = corstr,
+                                 sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
+                                 uneqsd = NULL, uneqsdDTR = NULL,
+                                 rho, rho.r1, rho.r0,
+                                 gammas, lambdas)
   }
   
   ## Construct string describing simulation parameters
@@ -233,7 +257,6 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                 if (save.data) {
                   result[["data"]] <- list(d$data)
                 }
-                cat('invalid')
                 return(result)
                 
               } else {
@@ -243,7 +266,7 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                               ids = d$data$id, 
                               times = times, direction = "long", v.names = "Y")
                 d1 <- d1[order(d1$id, d1$time), ]
-
+                
                 # Check working assumption re: correlation between response and
                 # products of residuals
                 respCor <- estimate.respCor(d$data, design, times, spltime, 
@@ -253,15 +276,15 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                             design, pool.dtr = T)
                 
                 param.hat <-
-                  tryCatch(estimate.params(d1,
-                                  diag(rep(1, length(times))),
-                                  times,
-                                  spltime,
-                                  design,
-                                  rep(0, length(gammas)),
-                                  maxiter.solver,
-                                  tol))
-                message('param.hat')
+                  try(estimate.params(d1,
+                                      diag(rep(1, length(times))),
+                                      times,
+                                      spltime,
+                                      design,
+                                      rep(0, length(gammas)),
+                                      maxiter.solver,
+                                      tol))
+                
                 # param.hat2 <-
                 #   multiroot(
                 #     esteqn.compute,
@@ -281,13 +304,10 @@ simulateSMART <- function(n = NULL, gammas, lambdas, times, spltime,
                                               param.hat,
                                               pool.time = pool.time,
                                               pool.dtr = pool.dtr)
-                message('sigma2.hat')
                 
                 rho.hat <-
                   estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat),
                                param.hat, corstr = "exchangeable")
-                
-                message('\nrho.hat')
                 
                 # Compute variance matrices for all conditional cells
                 condVars <- lapply(split.SMART(d$data), function(x) {
