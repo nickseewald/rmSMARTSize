@@ -1043,7 +1043,8 @@ estimate.sigma2 <-
                   resids * d[, grep("dtr", names(d))] *
                     matrix(rep(d$weight, nDTR), ncol = nDTR))
   
-  weightmat <- cbind("id" = d$id, "time" = d$time, d$weight * d[, grep("dtr", names(d))])
+  weightmat <- cbind("id" = d$id, "time" = d$time,
+                     d$weight * d[, grep("dtr", names(d))])
   
   if (pool.time & pool.dtr) {
     numerator <-
@@ -1641,9 +1642,9 @@ sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
         (1 - rho)/(1 + rho) * rho^2 / (2 - r)
     }
   } else if (design == 3) {
-    designEffect <- (3 - r) / 2
+    designEffect <- (3 - r1) / 2
     if (!conservative) {
-      correction <- (1-rho)*(3-r+6*rho-2*r*rho+2*rho^2)/((3-r)*(1+rho))
+      correction <- (1-rho)*(3-r+6*rho-2*r*rho+2*rho^2)/((3-r1)*(1+rho))
     }
   }
   else stop("Not a valid design indicator.")

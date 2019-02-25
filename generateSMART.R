@@ -209,6 +209,10 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                    x
                  })
     )
+    
+    # Add DTR indicators
+    d <- createDTRIndicators(d, design)
+    
   } else {
     #### UPDATED GENERATIVE MODEL ####
     ## Initialize data frame
@@ -279,18 +283,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$A2R[d$R == 1]  <- 2 * rbinom(sum(d$R == 1), 1, .5) - 1
       d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
       
-      # Assign weights
-      d$weight <- 4
-      
-      # Construct DTR consistency indicators
-      d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
-      d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
-      d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
-      d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
-      d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
-      d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
-      d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
-      d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
+      # Add DTR indicators
+      d <- createDTRIndicators(d, design)
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA
@@ -336,6 +330,45 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + 
         rnorm(sum(1 - d$R.1), 0, sqrt(variances$v2.1.NR.1))
       
+      DTRs <- dtrIndex(design)
+      dtrTriples <- as.data.frame((do.call(cbind, DTRs) + 1) / 2)
+      dtrTriples[dtrTriples == 0.5] <- 0
+      dtrTriples <- apply(dtrTriples, 1, function(x) paste(x, collapse = ""))
+      
+      # Randomize stage 2
+      d$A2R <- 0
+      d$A2NR <- 0
+      d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+      
+      # Add DTR indicators
+      d <- createDTRIndicators(d, design)
+      
+      # Select potential Y2 value to observe based on randomization
+      d$Y2 <- NA
+      d$Y2[d$dtr1 == 1] <- d$Y2.101[d$dtr1 == 1]
+      d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
+      d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
+      d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
+    } else {
+      ## DESIGN 3
+      ## Time 2 variances
+      
+      # Generate noise for responders to a1 = 1
+      e2.1.R <- rnorm(sum(d$R.1 == 1), 0, sqrt(variances$v2.1.R.1))
+      
+      d$Y2.101[d$R.1 == 1] <- d$Y2.101[d$R.1 == 1] + e2.1.R
+      d$Y2.101[d$R.1 == 0] <- d$Y2.101[d$R.1 == 0] + 
+        rnorm(sum(1 - d$R.1), 0, sqrt(variances$v2.1.NR.1))
+      
+      d$Y2.100[d$R.1 == 1] <- d$Y2.100[d$R.1 == 1] + e2.1.R
+      d$Y2.100[d$R.1 == 0] <- d$Y2.100[d$R.1 == 0] + 
+        rnorm(sum(1 - d$R.1), 0, sqrt(variances$v2.1.NR.0))
+      
+      d$Y2.000[d$R.0 == 1] <- d$Y2.000[d$R.0 == 1] +
+        rnorm(sum(d$R.0), 0, sqrt(variances$v2.0.R.0))
+      d$Y2.000[d$R.0 == 0] <- d$Y2.000[d$R.0 == 0] + 
+        rnorm(sum(1 - d$R.0), 0, sqrt(variances$v2.0.NR.0))
+      
       # Check conditional variation assumption
       DTRs <- dtrIndex(design)
       
@@ -346,23 +379,17 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       # Randomize stage 2
       d$A2R <- 0
       d$A2NR <- 0
-      d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
+      d$A2NR[d$R == 0 & d$A1 == 1] <-
+        2 * rbinom(sum(d$R == 0 & d$A1 == 1), 1, .5) - 1
       
-      # Construct weights and DTR indicators
-      d$weight <- 2*(d$R + 2 * (1 - d$R))
-      d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-      d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
-      d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
+      # Add DTR indicators
+      d <- createDTRIndicators(d, design)
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA
       d$Y2[d$dtr1 == 1] <- d$Y2.101[d$dtr1 == 1]
       d$Y2[d$dtr2 == 1 & d$R == 0] <- d$Y2.100[d$dtr2 == 1 & d$R == 0]
-      d$Y2[d$dtr3 == 1] <- d$Y2.001[d$dtr3 == 1]
-      d$Y2[d$dtr4 == 1 & d$R == 0] <- d$Y2.000[d$dtr4 == 1 & d$R == 0]
-    } else {
-      ## DESIGN 3
+      d$Y2[d$dtr3 == 1] <- d$Y2.000[d$dtr3 == 1]
     }
   }
   # 
@@ -380,27 +407,20 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   #   condVarAssump <- 0
   # }
   
-  #### Assign weights and DTR indicators ####
+  # Assign weights
   if (design == 1) {
-    
+    d$weight <- 4
   } else if (design == 2) {
-    d$weight <- 2 * (d$R + 2 * (1 - d$R))
-    
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
-  } else if (design == 3) {
-    d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)
-    
-    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
-    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
-    d$dtr3 <- as.numeric(with(d, (A1 == -1)))
+    d$weight <- 2*(d$R + 2 * (1 - d$R))
+  } else {
+    d$weight <- 2 + 2 * (1 - d$R) * (d$A1 == 1)  
   }
+  
   
   d <- d[order(d$id), ]
   rownames(d) <- 1:n
   d.full <- d
+  if (old) d.full <- NULL
   d <- subset(d, select = c("id", "Y0", "A1", "Y1", "R", "A2R",
                             "A2NR", "Y2", "weight",
                             grep("dtr", names(d), value = T)))

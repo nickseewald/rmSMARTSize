@@ -141,32 +141,52 @@ generateStage2.means <-
         stop("For design 1, gammas must be of length 9.")
       
       designMeanAdj.R <- matrix(rep(
-        dtrTxts[2,] * (gammas[6] + gammas[8] * dtrTxts[1,]) / respProbVec +
-          (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+        dtrTxts[2,] * (gammas[6] + gammas[8] * dtrTxts[1, ]) / respProbVec +
+          (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
       ),
       nrow = n,
       byrow = T)
       designMeanAdj.NR <- matrix(rep(
-        dtrTxts[3,] * (gammas[7] + gammas[9] * dtrTxts[1,]) / (1 - respProbVec) -
-          respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+        dtrTxts[3,] * (gammas[7] + gammas[9] * dtrTxts[1, ]) / (1 - respProbVec) -
+          respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
       ),
       nrow = n,
       byrow = T)
     } else if (design == 2) {
-      designMeanAdj.R <- 
-        matrix(rep((1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
-                   n), nrow = n, byrow = T)
+      
+      if (length(gammas) != 7)
+        stop("For design 2, gammas must be of length 7.")
+      
+      designMeanAdj.R <-  matrix(rep(
+        (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
+        n
+        ), nrow = n, byrow = T)
+      
       designMeanAdj.NR <- matrix(rep(
-        dtrTxts[3,] * (gammas[6] + gammas[7] * dtrTxts[1,]) / (1 - respProbVec) -
-          respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1,]),
+        dtrTxts[3,] * (gammas[6] + gammas[7] * dtrTxts[1, ]) / (1 - respProbVec) -
+          respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
       ),
       nrow = n,
       byrow = T)
     } else if (design == 3) {
       
+      if (length(gammas) != 6)
+        stop("For design 3, gammas must be of length 6.")
+      
+      designMeanAdj.R <- matrix(rep(
+        (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
+        n
+        ), nrow = n, byrow = T)
+      
+      designMeanAdj.NR <- matrix(rep(
+        gammas[6] * as.numeric(dtrTxts[1, ] == 1) * dtrTxts[3, ] / 
+          (1 - respProbVec) - 
+          respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
+        n
+      ), nrow = n, byrow = T)
     } else
       stop("'design' must be one of 1, 2, or 3.")
     
@@ -260,6 +280,9 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
   responderData <- subset(d, get(paste0("R.", a1)) == 1)
   nonResponderData <- subset(d, get(paste0("R.", a1)) == 0)
   
+  # For each design and first-stage treatment, specify "reference" DTRs from 
+  # which we can get mean outcomes for responders and non-responders which are
+  # consistent with the means needed for the variance bounds
   if (design == 1) {
     if (a1 == 1) {
       dtr1 <- "111"
@@ -280,6 +303,14 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
       dtr2 <- "001"
     } else {
       stop("Invalid choice of a1: must be one of 0, 1, or -1")
+    }
+  } else if (design == 3) {
+    if (a1 == 1) {
+      dtr1 <- "101"
+      dtr2 <- "100"
+    } else if (a1 %in% c(0, -1)) {
+      dtr1 <- "000"
+      dtr2 <- "000"
     }
   }
   
@@ -343,7 +374,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
                            varCombine = mean,
                            empirical = F, seed = 6781) {
   
-  if (design == 3) stop("computeVarGrid doesn't yet work for design 3")
+  # if (design == 3) stop("computeVarGrid doesn't yet work for design 3")
   
   if (is.list(varCombine) & length(varCombine) == 2) {
     varCombine.11 <- varCombine[[1]]
@@ -372,6 +403,9 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
                            "genR"    = rep("nr", 4))
   } else if (design == 3) {
     rNames <- c("11", "00")
+    varOrder <- data.frame("genPair" = c("11", "10", "00"),
+                           "refPair" = c("11", "11", "00"),
+                           "genR"    = rep("nr", 3))
   }
   
   # Create an environment to store variances created in loops
@@ -390,6 +424,11 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # Extract parameters from simGrid
     rho <- simGrid$corr[i]
     respFunction <- get(unlist(simGrid$respFunction[i]))
+    if ("respDirection" %in% names(simGrid)){
+      respDir <- simGrid$respDirection[i]
+    } else {
+      respDir <- "high"
+    }
     
     r0 <- simGrid$r0[i]
     r1 <- simGrid$r1[i]
@@ -397,7 +436,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # Generate a big data frame to estimate some of these things
     s1 <- generateStage1(2e5, times, spltime, r1, r0, gammas, sigma, corstr,
                          rho = rho, respFunction = respFunction,
-                         respDirection = "high", balanceRand = F,
+                         respDirection = respDir, balanceRand = F,
                          empirical = F)
     
     s <- generateStage2.means(s1, times, spltime, gammas, lambdas, 
@@ -502,5 +541,28 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
   sg
 }
 
-
-
+createDTRIndicators <- function(d, design) {
+  if (sum(c("A1", "A2R", "A2NR") %in% names(d)) != 3)
+    stop("Must provide data from a SMART.")
+  if (design == 1) {
+    d$dtr1 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr2 <- as.numeric(with(d, A1 ==  1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr3 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr4 <- as.numeric(with(d, A1 ==  1 & (A2R == -1 | A2NR == -1)))
+    d$dtr5 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR ==  1)))
+    d$dtr6 <- as.numeric(with(d, A1 == -1 & (A2R ==  1 | A2NR == -1)))
+    d$dtr7 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR ==  1)))
+    d$dtr8 <- as.numeric(with(d, A1 == -1 & (A2R == -1 | A2NR == -1)))
+  } else if (design == 2) {
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr4 <- as.numeric(with(d, (A1 == -1) * (R + (1 - R) * (A2NR == -1))))
+  } else if (design == 3) {
+    d$dtr1 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR ==  1))))
+    d$dtr2 <- as.numeric(with(d, (A1 ==  1) * (R + (1 - R) * (A2NR == -1))))
+    d$dtr3 <- as.numeric(with(d, (A1 == -1)))
+  } else stop("design must be one of 1, 2, 3.")
+  
+  return(d)
+}
