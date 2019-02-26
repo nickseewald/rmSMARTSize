@@ -1629,6 +1629,7 @@ sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
   if (!is.null(rounding) & !(rounding %in% c("up", "down"))) 
     stop("rounding must be either up or down")
   nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
+  cat(paste(nid, "\n"))
   correction <- 1 - rho^2
   if (design == 1) {
     designEffect <- 2
@@ -1644,10 +1645,13 @@ sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
   } else if (design == 3) {
     designEffect <- (3 - r1) / 2
     if (!conservative) {
-      correction <- (1-rho)*(3-r+6*rho-2*r*rho+2*rho^2)/((3-r1)*(1+rho))
+      correction <- ((3-r1)*(1+2*rho) + 2*rho^2) * (1-rho)/((3-r1)*(1+rho))
     }
   }
   else stop("Not a valid design indicator.")
+  
+  cat(paste(designEffect, "\n"))
+  cat(paste(correction, "\n"))
   
   if (rounding == "up") {
     n <- ceiling(nid * designEffect * correction)
