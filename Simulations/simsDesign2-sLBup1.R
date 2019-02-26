@@ -19,7 +19,7 @@
 ### --------------------------------------------- ###
 ###            Simulations for Design 2           ###
 ### Violation of Conditional Variation Assumption ###
-###   Response Variance 75% of Lower Threshold    ###
+###   Response Variance 101% of Lower Threshold   ###
 ### --------------------------------------------- ###
 
 library(here)
@@ -73,13 +73,13 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta3 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x) x[1] * 1.01)
 
 # Construct string to name simulation results
 simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
   x <- simGrid.delta3[i, ]
   # rdir <- as.character(x$respDirection)
-  paste0("d2_delta3_sLBdown25.",
+  paste0("d2_delta3_sLBup1.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
@@ -89,7 +89,7 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
-save(file = here("Results", "simsDesign2-delta3-sLBdown25.RData"),
+save(file = here("Results", "simsDesign2-delta3-sLBup1.RData"),
      list = c("sigma", "simGrid.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
@@ -129,9 +129,9 @@ for (scenario in 1:nrow(simGrid.delta3)) {
            "conservative n")
   )
 
-  if ((simGrid.delta3$sigma.r00[scenario] >
+  if ((simGrid.delta3$sigma.r0.LB[scenario] >
        simGrid.delta3$sigma.r0.UB[scenario]) |
-      (simGrid.delta3$sigma.r11[scenario] >
+      (simGrid.delta3$sigma.r1.LB[scenario] >
        simGrid.delta3$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
                          postID,
@@ -139,8 +139,8 @@ for (scenario in 1:nrow(simGrid.delta3)) {
                          "true corstr = exchangeable(", corr[1], ")\n",
                          "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
     if (notify) slackr_bot(designText)
-    warnText <- paste("The maximum allowable sigma.rXX (11 or 00) is less than",
-                      "the chosen value of sigma.r.",
+    warnText <- paste("It is not possible to not violate the conditional",
+                      "variation working assumption in this scenario.",
                       "Skipping for now...")
     assign(simGrid.delta3$simName[scenario], warnText)
     if (notify) slackr_bot(warnText)
@@ -172,7 +172,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
          envir = .GlobalEnv)
 
   # Save the result
-  save(file = here("Results", "simsDesign2-delta3-sLBdown25.RData"),
+  save(file = here("Results", "simsDesign2-delta3-sLBup1.RData"),
        list = c(grep("d2_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
                 "simGrid.delta3"),
@@ -196,13 +196,13 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta5 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x) x[1] * 1.1)
 
 # Construct string to name simulation results
 simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
   x <- simGrid.delta5[i, ]
   # rdir <- as.character(x$respDirection)
-  paste0("d2_delta5_sLBdown25.",
+  paste0("d2_delta5_sLBup1.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
@@ -213,7 +213,7 @@ simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
 })
 
 
-save(file = here("Results", "simsDesign2-delta5-sLBdown25.RData"),
+save(file = here("Results", "simsDesign2-delta5-sLBup1.RData"),
      list = c("sigma", "simGrid.delta5",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
@@ -252,21 +252,21 @@ for (scenario in 1:nrow(simGrid.delta5)) {
            "conservative n")
   )
   
-  if ((simGrid.delta5$sigma.r00[scenario] >
+  if ((simGrid.delta5$sigma.r0.LB[scenario] >
        simGrid.delta5$sigma.r0.UB[scenario]) |
-      (simGrid.delta5$sigma.r11[scenario] >
+      (simGrid.delta5$sigma.r1.LB[scenario] >
        simGrid.delta5$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
                          postID,
                          "delta = 0.5\n",
                          "true corstr = exchangeable(", corr[1], ")\n",
                          "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
-    if (notify) slackr_bot(designText)
-    warnText <- paste("The maximum allowable sigma.rXX (11 or 00) is less than",
-                      "the chosen value of sigma.r.",
+    slackr_bot(designText)
+    warnText <- paste("It is not possible to not violate the conditional",
+                      "variation working assumption in this scenario.",
                       "Skipping for now...")
     assign(simGrid.delta5$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
+    slackr_bot(warnText)
     next
   }
   
@@ -291,7 +291,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
                          postIdentifier = postID)),
            envir = .GlobalEnv)
   
-  save(file = here("Results", "simsDesign2-delta5-sLBdown25.RData"),
+  save(file = here("Results", "simsDesign2-delta5-sLBup1.RData"),
        list = c(grep("d2_delta5", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
                 "simGrid.delta5"),
@@ -314,13 +314,13 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta8 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x) x[1] * 1.1)
 
 # Construct string to name simulation results
 simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
   x <- simGrid.delta8[i, ]
   # rdir <- as.character(x$respDirection)
-  paste0("d2_delta8_sLBdown25.",
+  paste0("d2_delta8_sLBup1.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
@@ -330,7 +330,7 @@ simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
-save(file = here("Results", "simsDesign2-delta8-sLBdown25.RData"),
+save(file = here("Results", "simsDesign2-delta8-sLBup1.RData"),
      list = c("sigma", "simGrid.delta8",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
@@ -370,24 +370,23 @@ for (scenario in 1:nrow(simGrid.delta8)) {
            "conservative n")
   )
   
-  if ((simGrid.delta8$sigma.r00[scenario] >
+  if ((simGrid.delta8$sigma.r0.LB[scenario] >
        simGrid.delta8$sigma.r0.UB[scenario]) |
-      (simGrid.delta8$sigma.r11[scenario] >
+      (simGrid.delta8$sigma.r1.LB[scenario] >
        simGrid.delta8$sigma.r1.UB[scenario])) {
     designText <- paste0("Design 2\n",
                          postID,
                          "delta = 0.8\n",
                          "true corstr = exchangeable(", corr[1], ")\n",
                          "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
-    if (notify) slackr_bot(designText)
-    warnText <- paste("The maximum allowable sigma.rXX (11 or 00) is less than",
-                      "the chosen value of sigma.r.",
+    slackr_bot(designText)
+    warnText <- paste("It is not possible to not violate the conditional",
+                      "variation working assumption in this scenario.",
                       "Skipping for now...")
     assign(simGrid.delta8$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
+    slackr_bot(warnText)
     next
   }
-  
   set.seed(seed)
   
   assign(simGrid.delta8$simName[scenario],
@@ -409,7 +408,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
                          postIdentifier = postID)),
          envir = .GlobalEnv)
 
-  save(file = here("Results", "simsDesign2-delta8-sLBdown25.RData"),
+  save(file = here("Results", "simsDesign2-delta8-sLBup1.RData"),
        list = c(grep("d2_delta8", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
                 "simGrid.delta8"),
