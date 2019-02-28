@@ -1521,8 +1521,10 @@ response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
 #' @examples
 resultTable <- function(results, 
                         alternative = c("two.sided", "less", "greater"),
-                        paper = FALSE) {
+                        paper = FALSE, alpha = 0.05) {
   alternative <- match.arg(alternative)
+  
+  if (alternative == "two.sided")
   
   if (is.null(names(results)))
     stop("results must be a named list.")
@@ -1576,10 +1578,12 @@ resultTable <- function(results,
   resNames <- do.call(rbind,
                       lapply(resNames, function(rn) {
                         x <- rn[length(rn)]
-                        if (x == "sharp")
-                          rn[length(rn) - 1]
-                        else
-                          x
+                        if (x %in% c("sharp", "old")) {
+                          x <- rn[length(rn) - 1]
+                          if (x %in% c("sharp", "old"))
+                            x <- rn[length(rn) - 2]
+                        }
+                        x
                       })
   )
   
@@ -1608,17 +1612,21 @@ resultTable <- function(results,
     
   }
   
-  print(xtable(d, digits = c(1,1,0,1,1,1,1,0,0,3,3,3,3,3,3,3,0,0)),
-        sanitize.text.function = identity, booktabs = TRUE,
-        include.rownames = F,
-        include.colnames = T,
-        tabular.environment = "longtable")
+  print(
+    xtable(d, digits = c(1, 1, 0, 1, 1, 1, 1, 0, 0, 3, 3, 3, 3, 3, 3, 3, 0, 0)),
+    sanitize.text.function = identity,
+    booktabs = TRUE,
+    include.rownames = F,
+    include.colnames = T,
+    floating = F,
+    tabular.environment = "longtable"
+  )
   
   colnames(d) <- oldColnames
   return(invisible(d))
 }
 
-sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
+sample.size <- function(delta, r = NULL, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
                         design = 2, rounding = c("up", "down"),
                         conservative = TRUE) {
   rounding <- match.arg(rounding)
@@ -1629,7 +1637,6 @@ sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
   if (!is.null(rounding) & !(rounding %in% c("up", "down"))) 
     stop("rounding must be either up or down")
   nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
-  cat(paste(nid, "\n"))
   correction <- 1 - rho^2
   if (design == 1) {
     designEffect <- 2
@@ -1649,9 +1656,6 @@ sample.size <- function(delta, r, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
     }
   }
   else stop("Not a valid design indicator.")
-  
-  cat(paste(designEffect, "\n"))
-  cat(paste(correction, "\n"))
   
   if (rounding == "up") {
     n <- ceiling(nid * designEffect * correction)
