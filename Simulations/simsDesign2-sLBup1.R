@@ -46,10 +46,10 @@ simGrid <- expand.grid(list(
   r1 = c(.4, .6),
   corr = c(0, .3, .6, .8),
   oldModel = c(FALSE, TRUE),
-  respFunction = list("beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT")
-  # respDirection = c("high", "low")
-))
+  respFunction = list("indep" = "response.indep", "beta" = "response.beta",
+                      "oneT" = "response.oneT", "twoT" = "response.twoT"),
+  respDirection = c("high", "low")
+), stringsAsFactors = FALSE)
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
 
@@ -58,6 +58,7 @@ simGrid <- subset(simGrid, !(respFunction == "response.oneT" & r0 != r1))
 simGrid <- subset(simGrid, !(corr == 0 & sharp == T))
 simGrid <- subset(simGrid, !(oldModel & respFunction != "response.indep") |
                     respFunction == "response.indep")
+rownames(simGrid) <- 1:nrow(simGrid)
 
 # Send initial notification that simulations are about to start
 if(notify) {
@@ -196,7 +197,7 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta5 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 1.1)
+                                 varCombine = function(x) x[1] * 1.01)
 
 # Construct string to name simulation results
 simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
@@ -314,7 +315,7 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta8 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 1.1)
+                                 varCombine = function(x) x[1] * 1.01)
 
 # Construct string to name simulation results
 simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
