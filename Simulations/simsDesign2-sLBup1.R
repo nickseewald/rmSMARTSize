@@ -121,6 +121,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   }
   
   postID <- paste0(
+    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
     "Basic simulation setup\n",
     "Effect size: 0.3\n",
     "Response function:",
@@ -244,6 +245,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   }
   
   postID <- paste0(
+    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
     "Basic simulation setup\n",
     "Effect size: 0.5\n",
     "Response function:",
@@ -362,6 +364,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   }
   
   postID <- paste0(
+    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
     "Basic simulation setup\n",
     "Effect size: 0.8\n",
     "Response function:",
