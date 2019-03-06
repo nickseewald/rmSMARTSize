@@ -1541,7 +1541,9 @@ resultTable <- function(results,
     
     respCor.mean <- apply(l$respCor, 1, function(x) x[which.max(abs(x))])
     
-    
+    condCov.diff <- apply(l$condCov, 1, 
+                          function(x) ((x[2] >= x[1]) - (x[2] < x[1])) *
+      abs(x[2] - x[1]) / abs(x[1]))
     
     x <- data.frame(
       "delta" = l$delta,
@@ -1568,6 +1570,8 @@ resultTable <- function(results,
       "corY0sq" = as.numeric(respCor.mean[1]),
       "corY1sq" = as.numeric(respCor.mean[3]),
       "corY0Y1" = as.numeric(respCor.mean[2]),
+      "condCov02" = as.numeric(condCov.diff[1]),
+      "condCov12" = as.numeric(condCov.diff[2]),
       "nTrial" = l$niter,
       "nValid" = l$valid
     )
@@ -1606,6 +1610,7 @@ resultTable <- function(results,
                    "Coverage",
                    "$p$ value", 
                    "$\\cor(R,Y_0^2)$", "$\\cor(R,Y_1^2)$", "$\\cor(R,Y_0Y_1)$",
+                   "$\\cov(Y_0, Y_2)$", "$\\cov(Y_1, Y_2)$",
                    "Num. Runs", "Valid Runs")
   
   if (paper) {
@@ -1613,7 +1618,8 @@ resultTable <- function(results,
   }
   
   print(
-    xtable(d, digits = c(1, 1, 0, 1, 1, 1, 1, 0, 0, 3, 3, 3, 3, 3, 3, 3, 0, 0)),
+    xtable(d, digits = c(1, 1, 0, 1, 1, 1, 1, 0, 0,
+                         3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0)),
     sanitize.text.function = identity,
     booktabs = TRUE,
     include.rownames = F,
