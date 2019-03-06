@@ -269,13 +269,39 @@ testVarianceInput <- function(x, a, d, r0, r1, rho, resp = c("nr", "r")) {
 }
 
 
-computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
+#' Compute variance bounds for simulation scenario
+#'
+#' @param a1 
+#' @param d 
+#' @param design 
+#' @param sigma 
+#' @param r 
+#' @param rho 
+#' @param times 
+#' @param corstr 
+#' @param bound 
+#' @param boundType A `character` string, either `feasibility` or `assumption`.
+#' Ignored for `bound == "upper"`. See Details.
+#'
+#' @return
+#' @export
+#'
+#' @examples
+computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
                             corstr = c("identity", "exchangeable", "ar1"),
-                            bound = c("lower", "upper")) {
-  bound <- match.arg(bound)
-  corstr <- match.arg(corstr)
+                            bound = c("lower", "upper"),
+                            boundType = c("feasibility", "assumption")) {
+ 
+  bound     <- match.arg(bound)
+  boundType <- match.arg(boundType)
+  corstr    <- match.arg(corstr)
+  
   if (corstr == "identity")
     corstr <- "exchangeable"
+  
+  sigma <- reshapeSigma(sigma, times, design)
+  
+  dtrs <- dtrNames(design)
   
   responderData <- subset(d, get(paste0("R.", a1)) == 1)
   nonResponderData <- subset(d, get(paste0("R.", a1)) == 0)
@@ -314,7 +340,15 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
     }
   }
   
-  stage1var <- with(responderData, var(Y0 + get(paste0("Y1.", a1))))
+  dtrCol1 <- match(dtr1, dtrs)
+  dtrCol2 <- match(dtr2, dtrs)
+  
+  c0 <- rho * sigma[2, dtrCol1] * sigma[3] / 
+    (sigma[1] * (rho * sigma[1] + sigma[2]))
+  c1 <- rho * sigma[3] / (rho * sigma[1] + sigma[2])
+  
+  
+  stage1var <- with(responderData, var(c0 * Y0 + c1 * get(paste0("Y1.", a1))))
   
   Y2.dtr1    <- with(d,                get(paste0("Y2.", dtr1)))
   Y2.R.dtr1  <- with(responderData,    get(paste0("Y2.", dtr1)))
@@ -325,25 +359,29 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0,
   Y2.NR.dtr2 <- with(nonResponderData, get(paste0("Y2.", dtr2)))
   
   if (bound == "lower") {
-    sqrt(max(c(
-      0.1,
-      (rho / (1 + rho)) ^ 2 * stage1var,
-      (1 - r) * ((mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2 -
-                   (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2 +
-                   (rho / (1 + rho)) ^ 2 * stage1var),
-      sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr1) - mean(Y2.dtr1))^2 -
-        (1 - r) * (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2,
-      sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr2) - mean(Y2.dtr2))^2 -
-        (1 - r) * (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2
-    )))
+    if (boundType == "feasibility") {
+      sqrt(max(c(
+        0.1,
+        stage1var,
+        (1 - r) * ((mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2 -
+                     (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2 + stage1var)
+      )))
+    } else if (boundType == "assumption") {
+      sqrt(max(c(
+        0.1,
+        sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr1) - mean(Y2.dtr1))^2 -
+          (1 - r) * (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2,
+        sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr2) - mean(Y2.dtr2))^2 -
+          (1 - r) * (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2
+      )))
+    }
   } else {
     sqrt(max(
       c(0.1,
         sigma^2 / r - (1 - r) * 
           max(c(
             (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2, 
-            (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2)) - 
-          ((1 - r) / r) * (rho / (1 + rho))^2 * stage1var)
+            (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2)) - stage1var)
     ))
   }
 }
@@ -452,16 +490,22 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # variation assumption -- it's generally possible to go below it.
     # On the other hand, the upper bound is a hard limit -- going over this
     # value will produce errors
-    sigma.r0.LB <- computeVarBound(0, s, design, sigma, r0, rho, corstr)
-    sigma.r0.UB <- computeVarBound(0, s, design, sigma, r0, rho, corstr, 
+    sigma.r0.LBf <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr,
+                                   bound = "lower", boundType = "feasibility")
+    sigma.r0.LBa <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr,
+                                    bound = "lower", boundType = "assumption")
+    sigma.r0.UB <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr, 
                                    bound = "upper")
-    assign("sigma.r00", varCombine.00(c(sigma.r0.LB, sigma.r0.UB)),
+    assign("sigma.r00", varCombine.00(c(sigma.r0.LBa, sigma.r0.LBf, sigma.r0.UB)),
            envir = varEnv)
     
-    sigma.r1.LB <- computeVarBound(1, s, design, sigma, r1, rho, corstr)
-    sigma.r1.UB <- computeVarBound(1, s, design, sigma, r1, rho, corstr, 
+    sigma.r1.LBf <- computeVarBound(1, s, design, sigma, r0, rho, times, corstr,
+                                    bound = "lower", boundType = "feasibility")
+    sigma.r1.LBa <- computeVarBound(1, s, design, sigma, r0, rho, times, corstr,
+                                    bound = "lower", boundType = "assumption")
+    sigma.r1.UB <- computeVarBound(1, s, design, sigma, r1, rho, times, corstr, 
                                    bound = "upper")
-    assign("sigma.r11", varCombine.11(c(sigma.r1.LB, sigma.r1.UB)),
+    assign("sigma.r11", varCombine.11(c(sigma.r1.LBa, sigma.r1.LBf, sigma.r1.UB)),
            envir = varEnv)
     
     # If the upper bound is below the lower bound, choose sigma.rX to be 
@@ -533,8 +577,11 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     v <- do.call(cbind, lapply(names(varEnv), function(v) get(v, envir = varEnv)))
     colnames(v) <- names(varEnv)
     
-    cbind(simGrid[i, ], "sigma.r0.LB" = sigma.r0.LB, 
-          "sigma.r0.UB" = sigma.r0.UB, "sigma.r1.LB" = sigma.r1.LB,
+    cbind(simGrid[i, ], "sigma.r0.LBf" = sigma.r0.LBf,
+          "sigma.r0.LBa" = sigma.r0.LBa,
+          "sigma.r0.UB" = sigma.r0.UB,
+          "sigma.r1.LBf" = sigma.r1.LBf,
+          "sigma.r1.LBa" = sigma.r1.LBa,
           "sigma.r1.UB" = sigma.r1.UB, v)
   }
   
@@ -565,4 +612,28 @@ createDTRIndicators <- function(d, design) {
   } else stop("design must be one of 1, 2, 3.")
   
   return(d)
+}
+
+checkVarGridValidity <- function(varGrid) {
+  invalidSims <- subset(varGrid, ((sigma.r0.LBa <= sigma.r0.LBf) |
+                                           (sigma.r1.LBa <= sigma.r1.LBf) | 
+                                           (sigma.r0.UB <= sigma.r0.LBf) |
+                                           (sigma.r1.UB <= sigma.r1.LBf)),
+                        select = "simName")
+  invalidSims$noViol1 <- invalidSims$noViol0 <- F
+  invalidSims$noPositiveVar1 <- invalidSims$noPositiveVar0 <- F
+  
+  for (i in 1:nrow(invalidSims)) {
+    sgrow <- varGrid[varGrid$simName == invalidSims$simName[i], ]
+    if (sgrow$sigma.r0.LBa <= sgrow$sigma.r0.LBf) 
+      invalidSims$noViol0[i] <- T
+    if (sgrow$sigma.r1.LBa <= sgrow$sigma.r1.LBf) 
+      invalidSims$noViol1[i] <- T
+    if (sgrow$sigma.r0.UB <= sgrow$sigma.r0.LBf)
+      invalidSims$noPositiveVar0[i] <- T
+    if (sgrow$sigma.r1.UB <= sgrow$sigma.r1.LBf)
+      invalidSims$noPositiveVar1[i] <- T
+  }
+  
+  invalidSims
 }
