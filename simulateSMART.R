@@ -162,7 +162,7 @@ simulateSMART <- function(n = NULL,
   }
   
   # Compute conditional variances
-  if (old) {
+  if (old & is.null(varmats)) {
     varmats <- conditionalVarmat(times, spltime, design, r1, r0,
                                  corstr = corstr,
                                  sigma, sigma.r1 = sigma.r1, sigma.r0 = sigma.r0,
@@ -206,7 +206,7 @@ simulateSMART <- function(n = NULL,
                                  balanceRand = balanceRand, 
                                  empirical = empirical,
                                  respFunction = respFunction,
-                                 respDirection = respDirection)#, ...)
+                                 respDirection = respDirection, ...)
               
               if (d$valid == FALSE) {
                 ## If a non-valid trial has been generated (i.e., fewer than one
