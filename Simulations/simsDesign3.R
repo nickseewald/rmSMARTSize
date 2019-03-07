@@ -455,7 +455,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
          )),
          envir = .GlobalEnv)
   
-  save(file = here("Results", "simsDesign2-delta8-basic.RData"),
+  save(file = here("Results", "simsDesign3-delta8-basic.RData"),
        list = c(grep("d3_delta8", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
                 "simGrid.delta8"),

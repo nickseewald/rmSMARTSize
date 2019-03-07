@@ -173,7 +173,7 @@ save(file = here("Results", "simsDesign1-delta5-nrCorrDown50.RData"),
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid)) {
-  # Extract simulation conditions from simGrid.delta3
+  # Extract simulation conditions from simGrid
   r0 <- simGrid$r0[scenario]
   r1 <- simGrid$r1[scenario]
   sharp <- simGrid$sharp[scenario]
@@ -229,7 +229,7 @@ for (scenario in 1:nrow(simGrid)) {
          )),
          envir = .GlobalEnv)
   
-  save(file = here("Results", "simsDesign1-delta3-nrCorrDown50.RData"),
+  save(file = here("Results", "simsDesign1-delta5-nrCorrDown50.RData"),
        list = c(grep("d1_delta5", ls(), value = T), "sigma", "sigma.r1",
                 "sigma.r0", "simGrid", "gammas", "lambdas", "seed", "times",
                 "spltime"),
