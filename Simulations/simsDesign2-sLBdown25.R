@@ -40,16 +40,23 @@ tol <- 1e-8
 sigma <- 6
 
 # Generate a grid of simulation scenarios
-simGrid <- expand.grid(list(
-  sharp = c(FALSE, TRUE),
-  r0 = c(.4, .6),
-  r1 = c(.4, .6),
-  corr = c(0, .3, .6, .8),
-  oldModel = c(FALSE, TRUE),
-  respFunction = list("beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT")
-  # respDirection = c("high", "low")
-))
+simGrid <- expand.grid(
+  list(
+    sharp = c(FALSE, TRUE),
+    r0 = c(.4, .6),
+    r1 = c(.4, .6),
+    corr = c(0, .3, .6, .8),
+    oldModel = c(FALSE, TRUE),
+    respFunction = list(
+      "indep" = "response.indep",
+      "beta" = "response.beta",
+      "oneT" = "response.oneT",
+      "twoT" = "response.twoT"
+    ),
+    respDirection = c("high", "low")
+  ),
+  stringsAsFactors = FALSE
+)
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
 
@@ -58,6 +65,7 @@ simGrid <- subset(simGrid, !(respFunction == "response.oneT" & r0 != r1))
 simGrid <- subset(simGrid, !(corr == 0 & sharp == T))
 simGrid <- subset(simGrid, !(oldModel & respFunction != "response.indep") |
                     respFunction == "response.indep")
+rownames(simGrid) <- 1:nrow(simGrid)
 
 # Send initial notification that simulations are about to start
 if(notify) {
@@ -73,24 +81,32 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta3 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
   x <- simGrid.delta3[i, ]
-  # rdir <- as.character(x$respDirection)
+  rdir <- as.character(x$respDirection)
   paste0("d2_delta3_sLBdown25.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
          x$respFunction, 
-         # paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
+         paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
          ifelse(x$oldModel, ".old", ""),
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta3 <- checkVarGridValidity(simGrid.delta3)
+simGrid.delta3 <- simGrid.delta3[!is.element(simGrid.delta3$simName, 
+                                             invalidSims.delta3$simName), ]
+rownames(simGrid.delta3) <- 1:nrow(simGrid.delta3)
+
 save(file = here("Results", "simsDesign2-delta3-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta3",
+     list = c("sigma", "simGrid.delta3", "invalidSims.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta3)) {
@@ -101,7 +117,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   corr <- c(simGrid.delta3$corr[scenario], simGrid.delta3$corr.r1[scenario],
             simGrid.delta3$corr.r0[scenario])
   respFunc.name <- simGrid.delta3$respFunction[scenario]
-  # respDir <- simGrid.delta3$respDirection[scenario]
+  respDir <- simGrid.delta3$respDirection[scenario]
   old <- simGrid.delta3$oldModel[scenario]
 
   # Extract variances from simGrid
@@ -120,11 +136,12 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   }
   
   postID <- paste0(
-    "Basic simulation setup\n",
+    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
+    "sLBdown25 simulation setup\n",
     "Effect size: 0.3\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -153,35 +170,48 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   # Simulate
   if (notify) slackr_bot(simGrid.delta3$simName[scenario])
   assign(simGrid.delta3$simName[scenario],
-         try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.3, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         # respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
+         try(simulateSMART(
+           gammas = gammas,
+           lambdas = lambdas,
+           r1 = r1,
+           r0 = r0,
+           times = times,
+           spltime = spltime,
+           alpha = .05,
+           power = .8,
+           delta = 0.3,
+           design = 2,
+           conservative = !sharp,
+           sigma = sigma,
+           sigma.r1 = sigma.r1,
+           sigma.r0 = sigma.r0,
+           variances = vars,
+           pool.time = TRUE,
+           L = c(0, 0, 2, 0, 2, 2, 0),
+           corstr = "exch",
+           rho = corr[1],
+           rho.r1 = corr[2],
+           rho.r0 = corr[3],
+           respFunction = get(unlist(respFunc.name)),
+           # respDirection = respDir,
+           niter = niter,
+           notify = notify,
+           old = old,
+           postIdentifier = postID
+         )),
          envir = .GlobalEnv)
 
   # Save the result
   save(file = here("Results", "simsDesign2-delta3-sLBdown25.RData"),
        list = c(grep("d2_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
-                "simGrid.delta3"),
+                "simGrid.delta3", "invalidSims.delta3"),
        precheck = TRUE)
 }
 
 if (notify) {
-  x <- paste("All simulations are complete for effect size 0.3\n",
-             "for basic scenarios.")
+  x <- paste("All simulations are complete for Design 2,",
+             "effect size 0.3\n for sLBdown25 scenarios.")
   slackr_bot(x)
   rm(x)
 }
@@ -196,25 +226,32 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta5 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
   x <- simGrid.delta5[i, ]
-  # rdir <- as.character(x$respDirection)
+  rdir <- as.character(x$respDirection)
   paste0("d2_delta5_sLBdown25.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
          x$respFunction, 
-         # paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
+         paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
          ifelse(x$oldModel, ".old", ""),
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta5 <- checkVarGridValidity(simGrid.delta5)
+simGrid.delta5 <- simGrid.delta5[!is.element(simGrid.delta5$simName, 
+                                             invalidSims.delta5$simName), ]
+rownames(simGrid.delta5) <- 1:nrow(simGrid.delta5)
 
 save(file = here("Results", "simsDesign2-delta5-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta5",
+     list = c("sigma", "simGrid.delta5", "invalidSims.delta5",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta5)) {
@@ -225,7 +262,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   corr <- c(simGrid.delta5$corr[scenario], simGrid.delta5$corr.r1[scenario],
             simGrid.delta5$corr.r0[scenario])
   respFunc.name <- simGrid.delta5$respFunction[scenario]
-  # respDir <- simGrid.delta5$respDirection[scenario]
+  respDir <- simGrid.delta5$respDirection[scenario]
   old <- simGrid.delta5$oldModel[scenario]
   
   # Extract variances from simGrid
@@ -243,11 +280,12 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   }
   
   postID <- paste0(
-    "Basic simulation setup\n",
+    "Scenario ", scenario, " of ", nrow(simGrid.delta5), "\n",
+    "sLBdown25 simulation setup\n",
     "Effect size: 0.5\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -270,42 +308,58 @@ for (scenario in 1:nrow(simGrid.delta5)) {
     next
   }
   
+  # Set the seed for every unique simulation
   set.seed(seed)
   
   assign(simGrid.delta5$simName[scenario],
          try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.5, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         # respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
-           envir = .GlobalEnv)
+           simulateSMART(
+             gammas = gammas,
+             lambdas = lambdas,
+             r1 = r1,
+             r0 = r0,
+             times = times,
+             spltime = spltime,
+             alpha = .05,
+             power = .8,
+             delta = 0.5,
+             design = 2,
+             conservative = !sharp,
+             sigma = sigma,
+             sigma.r1 = sigma.r1,
+             sigma.r0 = sigma.r0,
+             variances = vars,
+             pool.time = TRUE,
+             L = c(0, 0, 2, 0, 2, 2, 0),
+             corstr = "exch",
+             rho = corr[1],
+             rho.r1 = corr[2],
+             rho.r0 = corr[3],
+             respFunction = get(unlist(respFunc.name)),
+             respDirection = respDir,
+             niter = niter,
+             notify = notify,
+             old = old,
+             postIdentifier = postID
+           )),
+         envir = .GlobalEnv)
   
   save(file = here("Results", "simsDesign2-delta5-sLBdown25.RData"),
        list = c(grep("d2_delta5", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
-                "simGrid.delta5"),
+                "simGrid.delta5", "invalidSims.delta5"),
        precheck = TRUE)
 }
 
-if (notify){
-  x <- paste("All simulations are complete for effect size 0.5\n",
-             "for basic scenarios.")
+if (notify) {
+  x <- paste("All simulations are complete for Design 1,", 
+             "effect size 0.5\n for sLBdown25 scenarios.")
   slackr_bot(x)
   rm(x)
 }
 
 rm(list = grep("d2_delta5", ls(), value = T))
+
 
 ##### Effect size: 0.8 #####
 
@@ -314,24 +368,32 @@ lambdas <- c(0.1, -0.5)
 
 simGrid.delta8 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 2,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
   x <- simGrid.delta8[i, ]
-  # rdir <- as.character(x$respDirection)
+  rdir <- as.character(x$respDirection)
   paste0("d2_delta8_sLBdown25.",
          ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                 paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
          ".exch", x$corr * 10, ".",
          x$respFunction, 
-         # paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
+         paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
          ifelse(x$oldModel, ".old", ""),
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta8 <- checkVarGridValidity(simGrid.delta8)
+simGrid.delta8 <- simGrid.delta8[!is.element(simGrid.delta8$simName, 
+                                             invalidSims.delta8$simName), ]
+rownames(simGrid.delta8) <- 1:nrow(simGrid.delta8)
+
 save(file = here("Results", "simsDesign2-delta8-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta8",
+     list = c("sigma", "simGrid.delta8", "invalidSims.delta8",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta8)) {
@@ -342,7 +404,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   corr <- c(simGrid.delta8$corr[scenario], simGrid.delta8$corr.r1[scenario],
             simGrid.delta8$corr.r0[scenario])
   respFunc.name <- simGrid.delta8$respFunction[scenario]
-  # respDir <- simGrid.delta8$respDirection[scenario]
+  respDir <- simGrid.delta8$respDirection[scenario]
   old <- simGrid.delta8$oldModel[scenario]
   
   # Extract variances from simGrid
@@ -361,11 +423,12 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   }
   
   postID <- paste0(
-    "Basic simulation setup\n",
+    "Scenario ", scenario, " of ", nrow(simGrid.delta8), "\n",
+    "sLBdown25 simulation setup\n",
     "Effect size: 0.8\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -388,39 +451,53 @@ for (scenario in 1:nrow(simGrid.delta8)) {
     next
   }
   
+  # Set the seed for every unique simulation
   set.seed(seed)
   
   assign(simGrid.delta8$simName[scenario],
          try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.8, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         # respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
+           simulateSMART(
+             gammas = gammas,
+             lambdas = lambdas,
+             r1 = r1,
+             r0 = r0,
+             times = times,
+             spltime = spltime,
+             alpha = .05,
+             power = .8,
+             delta = 0.8,
+             design = 2,
+             conservative = !sharp,
+             sigma = sigma,
+             sigma.r1 = sigma.r1,
+             sigma.r0 = sigma.r0,
+             variances = vars,
+             pool.time = TRUE,
+             L = c(0, 0, 2, 0, 2, 2, 0),
+             corstr = "exch",
+             rho = corr[1],
+             rho.r1 = corr[2],
+             rho.r0 = corr[3],
+             respFunction = get(unlist(respFunc.name)),
+             respDirection = respDir,
+             niter = niter,
+             notify = notify,
+             old = old,
+             postIdentifier = postID
+           )),
          envir = .GlobalEnv)
 
   save(file = here("Results", "simsDesign2-delta8-sLBdown25.RData"),
        list = c(grep("d2_delta8", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
-                "simGrid.delta8"),
+                "simGrid.delta8", "invalidSims.delta8"),
        precheck = TRUE)
 }
 
 if (notify) {
-  x <- paste("All simulations are complete for effect size 0.8\n",
-             "for basic scenarios.")
+  x <- paste("All simulations are complete for Design 2,", 
+             "effect size 0.8\n for sLBdown25 scenarios.")
   slackr_bot(x)
-  slackr_bot("Shutting down the cluster.")
   rm(x)
 }
 

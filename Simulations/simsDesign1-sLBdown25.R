@@ -1,4 +1,4 @@
-# simsDesign1.R
+# simsDesign1-sLBdown25.R
 # Copyright 2018 Nicholas J. Seewald
 #
 # This file is part of rmSMARTsize.
@@ -65,6 +65,7 @@ simGrid <- subset(simGrid, !(respFunction == "response.oneT" & r0 != r1))
 simGrid <- subset(simGrid, !(corr == 0 & sharp == T))
 simGrid <- subset(simGrid, !(oldModel & respFunction != "response.indep") |
                     respFunction == "response.indep")
+rownames(simGrid) <- 1:nrow(simGrid)
 
 # Send initial notification that simulations are about to start
 if(notify) {
@@ -80,7 +81,8 @@ lambdas <- c(0.3, 0.4)
 
 simGrid.delta3 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 1,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
@@ -96,8 +98,15 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta3 <- checkVarGridValidity(simGrid.delta3)
+simGrid.delta3 <- simGrid.delta3[!is.element(simGrid.delta3$simName, 
+                                             invalidSims.delta3$simName), ]
+rownames(simGrid.delta3) <- 1:nrow(simGrid.delta3)
+
 save(file = here("Results", "simsDesign1-delta3-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta3",
+     list = c("sigma", "simGrid.delta3", "invalidSims.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta3)) {
@@ -132,7 +141,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
     "Effect size: 0.3\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -196,7 +205,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   save(file = here("Results", "simsDesign1-delta3-sLBdown25.RData"),
        list = c(grep("d1_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
-                "simGrid.delta3"),
+                "simGrid.delta3", "invalidSims.delta3"),
        precheck = TRUE)
 }
 
@@ -217,7 +226,8 @@ lambdas <- c(0.3, 0.4)
 
 simGrid.delta5 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 1,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
@@ -233,8 +243,15 @@ simGrid.delta5$simName <- sapply(1:nrow(simGrid.delta5), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta5 <- checkVarGridValidity(simGrid.delta5)
+simGrid.delta5 <- simGrid.delta5[!is.element(simGrid.delta5$simName, 
+                                             invalidSims.delta5$simName), ]
+rownames(simGrid.delta5) <- 1:nrow(simGrid.delta5)
+
 save(file = here("Results", "simsDesign1-delta5-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta5",
+     list = c("sigma", "simGrid.delta5", "invalidSims.delta5",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta5)) {
@@ -263,12 +280,12 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   }
   
   postID <- paste0(
-    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
+    "Scenario ", scenario, " of ", nrow(simGrid.delta5), "\n",
     "sLBdown25 simulation setup\n",
     "Effect size: 0.5\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -330,7 +347,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   save(file = here("Results", "simsDesign1-delta5-sLBdown25.RData"),
        list = c(grep("d1_delta5", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
-                "simGrid.delta5"),
+                "simGrid.delta5", "invalidSims.delta5"),
        precheck = TRUE)
 }
 
@@ -351,7 +368,8 @@ lambdas <- c(0.3, 0.4)
 
 simGrid.delta8 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 1,
-                                 varCombine = function(x) x[1] * 0.75)
+                                 varCombine = function(x)
+                                   x[1] - 0.25 * abs(x[1] - x[2]))
 
 # Construct string to name simulation results
 simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
@@ -367,8 +385,15 @@ simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta8 <- checkVarGridValidity(simGrid.delta8)
+simGrid.delta8 <- simGrid.delta8[!is.element(simGrid.delta8$simName, 
+                                             invalidSims.delta8$simName), ]
+rownames(simGrid.delta8) <- 1:nrow(simGrid.delta8)
+
 save(file = here("Results", "simsDesign1-delta8-sLBdown25.RData"),
-     list = c("sigma", "simGrid.delta8",
+     list = c("sigma", "simGrid.delta8", "invalidSims.delta8",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta8)) {
@@ -398,12 +423,12 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   }
   
   postID <- paste0(
-    "Scenario ", scenario, " of ", nrow(simGrid.delta3), "\n",
+    "Scenario ", scenario, " of ", nrow(simGrid.delta8), "\n",
     "sLBdown25 simulation setup\n",
     "Effect size: 0.8\n",
     "Response function:",
     respFunc.name,
-    "\n",
+    " ", respDir, "\n",
     ifelse(sharp, "sharp n",
            "conservative n")
   )
@@ -465,7 +490,7 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   save(file = here("Results", "simsDesign1-delta8-sLBdown25.RData"),
        list = c(grep("d1_delta8", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
-                "simGrid.delta8"),
+                "simGrid.delta8", "invalidSims.delta8"),
        precheck = TRUE)
 }
 
