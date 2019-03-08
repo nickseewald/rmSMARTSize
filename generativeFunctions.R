@@ -620,6 +620,10 @@ checkVarGridValidity <- function(varGrid) {
                                            (sigma.r0.UB <= sigma.r0.LBf) |
                                            (sigma.r1.UB <= sigma.r1.LBf)),
                         select = "simName")
+  
+  if (nrow(invalidSims) == 0)
+    return()
+  
   invalidSims$noViol1 <- invalidSims$noViol0 <- F
   invalidSims$noPositiveVar1 <- invalidSims$noPositiveVar0 <- F
   
