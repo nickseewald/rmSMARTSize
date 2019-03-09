@@ -17,7 +17,7 @@
 # along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
 ### -------------------------------------------- ###
-###            Simulations for Design 2          ###
+###            Simulations for Design 3          ###
 ###  Violation of Response Covariance Assumption ###
 ### Response Directly Correlated with (Y1-mu1)^2 ###
 ### -------------------------------------------- ###
@@ -98,7 +98,7 @@ simGrid.delta3 <- simGrid.delta3[!is.element(simGrid.delta3$simName,
                                              invalidSims.delta3$simName), ]
 rownames(simGrid.delta3) <- 1:nrow(simGrid.delta3)
 
-save(file = here("Results", "simsDesign3-delta3-basic.RData"),
+save(file = here("Results", "simsDesign3-delta3-respSq.RData"),
      list = c("sigma", "simGrid.delta3", "invalidSims.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
@@ -129,7 +129,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   }
   
   postID <- paste0(
-    "Basic simulation setup\n",
+    "respSq simulation setup\n",
     "Effect size: 0.3\n",
     "Response function:",
     respFunc.name,
@@ -194,7 +194,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
          envir = .GlobalEnv)
 
   # Save the result
-  save(file = here("Results", "simsDesign3-delta3-basic.RData"),
+  save(file = here("Results", "simsDesign3-delta3-respSq.RData"),
        list = c(grep("d3_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
                 "simGrid.delta3", "invalidSIms.delta3"),
@@ -203,7 +203,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
 
 if (notify) {
   x <- paste("All simulations are complete for Design 3,", 
-             "effect size 0.3\n for basic scenarios.")
+             "effect size 0.3\n for respSq scenarios.")
   slackr_bot(x)
   rm(x)
 }
@@ -241,7 +241,7 @@ simGrid.delta5 <- simGrid.delta5[!is.element(simGrid.delta5$simName,
                                              invalidSims.delta5$simName), ]
 rownames(simGrid.delta5) <- 1:nrow(simGrid.delta5)
 
-save(file = here("Results", "simsDesign3-delta5-basic.RData"),
+save(file = here("Results", "simsDesign3-delta5-respSq.RData"),
      list = c("sigma", "simGrid.delta5", "invalidSims.delta5",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
@@ -271,7 +271,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   }
   
   postID <- paste0(
-    "Basic simulation setup\n",
+    "respSq simulation setup\n",
     "Effect size: 0.5\n",
     "Response function:",
     respFunc.name,
@@ -333,7 +333,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
          )),
          envir = .GlobalEnv)
   
-  save(file = here("Results", "simsDesign3-delta5-basic.RData"),
+  save(file = here("Results", "simsDesign3-delta5-respSq.RData"),
        list = c(grep("d3_delta5", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime", 
                 "simGrid.delta5", "invalidSims.delta5"),
@@ -341,152 +341,13 @@ for (scenario in 1:nrow(simGrid.delta5)) {
 }
 
 if (notify) {
-  x <- paste("All simulations are complete for Design 2,", 
-             "effect size 0.5\n for basic scenarios.")
+  x <- paste("All simulations are complete for Design 3,", 
+             "effect size 0.5\n for respSq scenarios.")
   slackr_bot(x)
   rm(x)
 }
 
 rm(list = grep("d3_delta5", ls(), value = T))
-
-
-##### Effect size: 0.8 #####
-
-gammas <- c(33.5, -0.8, 0.9, -0.6, 1.2, 0.6)
-lambdas <- c(1.5, 0.5)
-
-simGrid.delta8 <- computeVarGrid(simGrid, times, spltime, gammas,
-                                 sigma, corstr = "exch", design = 3)
-
-# Construct string to name simulation results
-simGrid.delta8$simName <- sapply(1:nrow(simGrid.delta8), function(i) {
-  x <- simGrid.delta8[i, ]
-  rdir <- as.character(x$respDirection)
-  paste0("d3_delta8.",
-         ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
-                paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
-         ".exch", x$corr * 10, ".",
-         x$respFunction, 
-         paste0(toupper(substr(rdir, 1, 1)), substr(rdir, 2, nchar(rdir))),
-         ifelse(x$oldModel, ".old", ""),
-         ifelse(x$sharp, ".sharp", ""))
-})
-
-# Check validity of scenarios before trying to simulate them
-# and remove any "invalid" ones
-invalidSims.delta8 <- checkVarGridValidity(simGrid.delta8)
-simGrid.delta8 <- simGrid.delta8[!is.element(simGrid.delta8$simName, 
-                                             invalidSims.delta8$simName), ]
-rownames(simGrid.delta8) <- 1:nrow(simGrid.delta8)
-
-save(file = here("Results", "simsDesign3-delta8-basic.RData"),
-     list = c("sigma", "simGrid.delta8", "invalidSims.delta8",
-              "gammas", "lambdas", "seed", "times", "spltime"))
-
-for (scenario in 1:nrow(simGrid.delta8)) {
-  # Extract simulation conditions from simGrid.delta8
-  r0 <- simGrid.delta8$r0[scenario]
-  r1 <- simGrid.delta8$r1[scenario]
-  sharp <- simGrid.delta8$sharp[scenario]
-  corr <- c(simGrid.delta8$corr[scenario], simGrid.delta8$corr.r1[scenario],
-            simGrid.delta8$corr.r0[scenario])
-  respFunc.name <- simGrid.delta8$respFunction[scenario]
-  respDir <- simGrid.delta8$respDirection[scenario]
-  old <- simGrid.delta8$oldModel[scenario]
-  
-  # Extract variances from simGrid
-  sigma.r0 <- simGrid.delta8$sigma.r00[scenario]
-  sigma.r1 <- simGrid.delta8$sigma.r11[scenario]
-  vars <- simGrid.delta8[scenario, 
-                         c(grep("^sigma.nr[0-9].", names(simGrid.delta8)),
-                           grep("^v2\\.", names(simGrid.delta8)))]
-  
-  # Recompute r0 if necessary
-  if(respFunc.name == "response.oneT"){
-    upsilon <- qnorm(r1, as.numeric(sum(gammas[1:3])), sigma,
-                     lower.tail = FALSE)
-    r0 <- pnorm(upsilon, sum(gammas[1:2]) - gammas[3], sigma,
-                lower.tail = FALSE)
-  }
-  
-  postID <- paste0(
-    "Basic simulation setup\n",
-    "Effect size: 0.8\n",
-    "Response function:",
-    respFunc.name,
-    "\n",
-    ifelse(sharp, "sharp n",
-           "conservative n")
-  )
-  
-  if ((simGrid.delta8$sigma.r0.LB[scenario] >
-       simGrid.delta8$sigma.r0.UB[scenario]) |
-      (simGrid.delta8$sigma.r1.LB[scenario] >
-       simGrid.delta8$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design 3\n",
-                         postID,
-                         "delta = 0.8\n",
-                         "true corstr = exchangeable(", corr[1], ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
-    if (notify) slackr_bot(designText)
-    warnText <- paste("It is not possible to not violate the conditional",
-                      "variation working assumption in this scenario.",
-                      "Skipping for now...")
-    assign(simGrid.delta8$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
-    next
-  }
-  
-  # Set the seed for every unique simulation
-  set.seed(seed)
-
-  assign(simGrid.delta8$simName[scenario],
-         try(simulateSMART(
-           gammas = gammas,
-           lambdas = lambdas,
-           r1 = r1,
-           r0 = r0,
-           times = times,
-           spltime = spltime,
-           alpha = .05,
-           power = .8,
-           delta = 0.8,
-           design = 3,
-           conservative = !sharp,
-           sigma = sigma,
-           sigma.r1 = sigma.r1,
-           sigma.r0 = sigma.r0,
-           variances = vars,
-           pool.time = TRUE,
-           L = c(0, 0, 2, 0, 2, 1),
-           corstr = "exch",
-           rho = corr[1],
-           rho.r1 = corr[2],
-           rho.r0 = corr[3],
-           respFunction = get(unlist(respFunc.name)),
-           respDirection = respDir,
-           niter = niter,
-           notify = notify,
-           old = old,
-           postIdentifier = postID
-         )),
-         envir = .GlobalEnv)
-  
-  save(file = here("Results", "simsDesign2-delta8-basic.RData"),
-       list = c(grep("d3_delta8", ls(), value = T), "sigma",
-                "gammas", "lambdas", "seed", "times", "spltime", 
-                "simGrid.delta8", "invalidSims.delta8"),
-       precheck = TRUE)
-}
-
-if (notify) {
-  x <- paste("All simulations are complete for Design 3,", 
-             "effect size 0.8\n for basic scenarios.")
-  slackr_bot(x)
-  rm(x)
-}
-
-rm(list = grep("d3_delta8", ls(), value = T))
 
 if(check.dompi) {
   closeCluster(clus)
