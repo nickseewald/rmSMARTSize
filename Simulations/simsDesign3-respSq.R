@@ -37,7 +37,7 @@ niter <- 3000
 maxiter.solver <- 1000
 tol <- 1e-8
 
-sigma <- 5
+sigma <- 6
 
 # Generate a grid of simulation scenarios
 simGrid <- expand.grid(
