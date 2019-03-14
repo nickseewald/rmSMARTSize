@@ -23,6 +23,7 @@ generateStage1 <- function(n,
                            r1,
                            r0,
                            gammas,
+                           design,
                            sigma,
                            corstr = c("identity", "exchangeable", "ar1"),
                            rho = 0,
@@ -38,6 +39,7 @@ generateStage1 <- function(n,
     stop("There's a problem with n being generated")
   
   corstr <- match.arg(corstr)
+  sigma <- reshapeSigma(sigma, times, design)
   
   ## Initialize data frame
   d <- data.frame("id" = 1:n)
@@ -67,10 +69,13 @@ generateStage1 <- function(n,
   } else if (corstr == "ar1") {
     # FIXME: This only works for time 1 right now! Any other time will not have 
     # proper correlation structure
-    d[[paste0("Y", time, ".0")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] -
-      gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    d[[paste0("Y", time, ".1")]] <- (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] +
-      gammas[3] + rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    for (time in times[times > 0 & times <= spltime]) {
+      corrT <- rho^(time - times[1])
+      d[[paste0("Y", time, ".0")]] <- (1-corrT)*gammas[1] + corrT*d$Y0 +
+        gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-corrT^2))*sigma)
+      d[[paste0("Y", time, ".1")]] <- (1-corrT)*gammas[1] + corrT*d$Y0 +
+        gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-corrT^2))*sigma)
+    }
   } else {
     warning("Y1 not created")
   }
@@ -91,7 +96,7 @@ generateStage1 <- function(n,
   d$R[d$A1 == 1]  <- d$R.1[d$A1 == 1]
   d$R[d$A1 == -1] <- d$R.0[d$A1 == -1]
   
-  output <- list("data" = d, "r0" = r0, "r1" = r1, "rho" = rho)
+  output <- list("data" = d, "r0" = r0, "r1" = r1, "rho" = rho, "sigma" = sigma)
   class(output) <- c("generateStage1", class(output))
   output
 }
@@ -111,10 +116,11 @@ generateStage2.means <-
     corstr <- match.arg(corstr)
     
     # Extract stage-1 data and parameters
-    d   <- stage1$data
-    r1  <- stage1$r1
-    r0  <- stage1$r0
-    rho <- stage1$rho
+    d     <- stage1$data
+    r1    <- stage1$r1
+    r0    <- stage1$r0
+    rho   <- stage1$rho
+    sigma <- stage1$sigma
     
     n <- nrow(d)
     nDTR <- switch(design, 8, 4, 3)
@@ -162,15 +168,13 @@ generateStage2.means <-
       designMeanAdj.R <-  matrix(rep(
         (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
-        ), nrow = n, byrow = T)
+      ), nrow = n, byrow = T)
       
       designMeanAdj.NR <- matrix(rep(
         dtrTxts[3,] * (gammas[6] + gammas[7] * dtrTxts[1, ]) / (1 - respProbVec) -
           respProbVec * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
-      ),
-      nrow = n,
-      byrow = T)
+      ), nrow = n, byrow = T)
     } else if (design == 3) {
       
       if (length(gammas) != 6)
@@ -198,8 +202,8 @@ generateStage2.means <-
         # gammas (only up to the stage 1 parts of the time 2 model)
         matrix(rep(
           ((1 - rho) / (1 + rho)) * gammas[1] + 
-            (gammas[2] + gammas[3] * dtrTxts[1,]) / (1 + rho) +
-            gammas[4] + gammas[5] * dtrTxts[1,],
+            (gammas[2] + gammas[3] * dtrTxts[1, ]) / (1 + rho) +
+            gammas[4] + gammas[5] * dtrTxts[1, ],
           n
         ),
         nrow = n,
@@ -213,6 +217,22 @@ generateStage2.means <-
         # Add response adjustment
         respMatrix * designMeanAdj.R + (1 - respMatrix) * designMeanAdj.NR
     } else if (corstr == "ar1") {
+      # FIXME: This only works for time 2 right now! Any other time will not have 
+      # proper correlation structure
+      for (time in times[times > spltime]) {
+        for (dtr in 1:nDTR) {
+          d[, paste0("Y", time, ".", dtrTriples[dtr])] <- 
+            # Start with a matrix of just the appropriate linear combinations of 
+            # gammas (only up to the stage 1 parts of the time 2 model)
+            matrix(rep(
+              gammas[1] + 
+                (1 - rho * sigma[2, dtr]/sigma[3, dtr]) * 
+                (gammas[2] + gammas[3] * dtrTxts[1, dtr]) + 
+                gammas[4] + gammas[5] * dtrTxts[1, dtr],
+              n
+            ), nrow = n)
+        }
+      }
       stop("generateStage2 not yet implemented for corstr = 'ar1'")
     }
     d
