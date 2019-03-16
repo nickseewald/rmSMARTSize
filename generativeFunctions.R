@@ -80,8 +80,14 @@ generateStage1 <- function(n,
     warning("Y1 not created")
   }
   
+  sigmaRespFunc <- sigma[which(times == spltime), 
+                         sapply(unique(substr(dtrNames(3),1,1)), 
+                                function(x) 
+                                  min(which(x == substr(dtrNames(3), 1, 1))))]
+  
   ## Generate response status
-  resp <- respFunction(d, gammas, r1, r0, respDirection, sigma, causal = T)
+  resp <- respFunction(d, gammas, r1, r0, respDirection, sigmaRespFunc,
+                       causal = T)
   d <- resp$data
   r1 <- resp$r1
   r0 <- resp$r0
@@ -492,8 +498,8 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     r1 <- simGrid$r1[i]
     
     # Generate a big data frame to estimate some of these things
-    s1 <- generateStage1(2e5, times, spltime, r1, r0, gammas, sigma, corstr,
-                         rho = rho, respFunction = respFunction,
+    s1 <- generateStage1(2e5, times, spltime, r1, r0, gammas, design, sigma,
+                         corstr, rho = rho, respFunction = respFunction,
                          respDirection = respDir, balanceRand = F,
                          empirical = F)
     

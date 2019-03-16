@@ -1424,12 +1424,21 @@ response.indep <- function(d, gammas, r1, r0, respDirection = NULL,
 }
 
 response.oneT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
-                          sigma, causal = F) {
+                          sigmaY1, causal = F) {
   respDirection <- match.arg(respDirection)
   tail <- switch(respDirection, "high" = F, "low" = T)
   
+  if (length(sigmaY1) == 1) {
+    sigmaY1.1 <- sigmaY1.0 <- sigmaY1
+  } else if (length(sigmaY1) == 2) {
+    sigmaY1.0 <- sigmaY1[1]
+    sigmaY1.1 <- sigmaY1[2]
+  } else {
+    warning("sigmaY1 can have length at most 2; ignoring subsequent elements.")
+  }
+  
   upsilon <- qnorm(r1, as.numeric(sum(gammas[1:3])), 
-                   sigma, lower.tail = tail)
+                   sigmaY1.1, lower.tail = tail)
   if (causal) {
     d$R.0 <- as.numeric(d$Y1.0 >= upsilon)
     d$R.1 <- as.numeric(d$Y1.1 >= upsilon)
@@ -1437,7 +1446,7 @@ response.oneT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
     d$R <- as.numeric(d$Y1 >= upsilon)
   }
   r0temp <- pnorm(upsilon, sum(gammas[1:2]) - gammas[3],
-                  sigma, lower.tail = tail)
+                  sigmaY1.0, lower.tail = tail)
   if (r0temp != r0) {
     warning(paste("Overwriting the provided value of r0 to accomodate the",
                   "single-threshold response function.",
@@ -1490,12 +1499,23 @@ response.sq <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
 }
 
 response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
-                          sigma, causal = F) {
+                          sigmaY1, causal = F) {
   respDirection <- match.arg(respDirection)
   tail <- switch(respDirection, "high" = F, "low" = T)
   
-  upsilon1 <- qnorm(r1, sum(gammas[1:3]),             sigma, lower.tail = tail)
-  upsilon0 <- qnorm(r0, sum(gammas[1:2]) - gammas[3], sigma, lower.tail = tail)
+  if (length(sigmaY1) == 1) {
+    sigmaY1.1 <- sigmaY1.0 <- sigmaY1
+  } else if (length(sigmaY1) == 2) {
+    sigmaY1.0 <- sigmaY1[1]
+    sigmaY1.1 <- sigmaY1[2]
+  } else {
+    warning("sigmaY1 can have length at most 2; ignoring subsequent elements.")
+  }
+  
+  upsilon1 <- qnorm(r1, sum(gammas[1:3]), sigmaY1.1,
+                    lower.tail = tail)
+  upsilon0 <- qnorm(r0, sum(gammas[1:2]) - gammas[3], sigmaY1.0,
+                    lower.tail = tail)
   
   if (causal) {
     d$R.1 <- d$R.0 <- NA
