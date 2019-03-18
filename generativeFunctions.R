@@ -231,15 +231,19 @@ generateStage2.means <-
             # Start with a matrix of just the appropriate linear combinations of 
             # gammas (only up to the stage 1 parts of the time 2 model)
             matrix(rep(
-              gammas[1] + 
-                (1 - rho * sigma[2, dtr]/sigma[3, dtr]) * 
-                (gammas[2] + gammas[3] * dtrTxts[1, dtr]) + 
-                gammas[4] + gammas[5] * dtrTxts[1, dtr],
+              spltime *  (1 - rho * sigma[3, dtr]/sigma[2, dtr]) * 
+                (gammas[1] + gammas[2] + gammas[3] * dtrTxts[1, dtr]) + 
+                (time - spltime) * (gammas[4] + gammas[5] * dtrTxts[1, dtr]),
               n
-            ), nrow = n)
+            ), nrow = n) +
+            # Add appropriate causal Y1 (Y0 doesn't appear)
+            as.matrix(rho * d[[paste0("Y1.", substr(dtrTriples[dtr], 1, 1))]]) +
+            # Add response adjustment
+            respMatrix[, dtr] * designMeanAdj.R[, dtr] + 
+            (1 - respMatrix[, dtr]) * designMeanAdj.NR[, dtr]
         }
       }
-      stop("generateStage2 not yet implemented for corstr = 'ar1'")
+      # stop("generateStage2 not yet implemented for corstr = 'ar1'")
     }
     d
   }
@@ -369,10 +373,15 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
   dtrCol1 <- match(dtr1, dtrs)
   dtrCol2 <- match(dtr2, dtrs)
   
-  c0 <- rho * sigma[2, dtrCol1] * sigma[3] / 
-    (sigma[1] * (rho * sigma[1] + sigma[2]))
-  c1 <- rho * sigma[3] / (rho * sigma[1] + sigma[2])
-  
+  if (corstr %in% c("identity", "exchangeable")) {
+    c0 <- rho * sigma[2, dtrCol1] * sigma[3, dtrCol1] / 
+      (sigma[1, dtrCol1] * (rho * sigma[1, dtrCol1] + sigma[2, dtrCol1]))
+    c1 <- rho * sigma[3, dtrCol1] / 
+      (rho * sigma[1, dtrCol1] + sigma[2, dtrCol1])
+  } else if (corstr == "ar1") {
+    c0 <- 0
+    c1 <- rho * sigma[3, dtrCol1] / sigma[2, dtrCol1]
+  }
   
   stage1var <- with(responderData, var(c0 * Y0 + c1 * get(paste0("Y1.", a1))))
   
@@ -534,14 +543,6 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     assign("sigma.r11", varCombine.11(c(sigma.r1.LBa, sigma.r1.LBf, sigma.r1.UB)),
            envir = varEnv)
     
-    # If the upper bound is below the lower bound, choose sigma.rX to be 
-    # below the upper bound to avoid errors (note that this violates the
-    # conditional variation assumption)
-    if (varEnv$sigma.r00 > sigma.r0.UB) 
-      assign("sigma.r00", sigma.r0.UB * .95, envir = varEnv)
-    if (varEnv$sigma.r11 > sigma.r1.UB) 
-      assign("sigma.r11", sigma.r1.UB * .95, envir = varEnv)
-    
     
     for (index in 1:nrow(varOrder)) {
       r <- get(paste0("r", substr(varOrder$genPair[index], 1, 1)))
@@ -579,15 +580,27 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # Compute residual variances for use in generateSMART()
     for (index in nrNames) {
       sigma.nr <- get(paste0("sigma.nr", index), envir = varEnv)
-      r <- get(paste0("r", substr(index, 1, 1)))
+      # r <- get(paste0("r", substr(index, 1, 1)))
       Y1 <- with(s, get(paste0("Y1.", substr(index, 1, 1))))
       R <- with(s, get(paste0("R.", substr(index, 1, 1))))
-      Y2 <- with(s, get(paste0("Y2.",
-                               substr(index, 1, 1), 0, substr(index, 2, 2))))
+      # Y2 <- with(s, get(paste0("Y2.",
+      #                          substr(index, 1, 1), 0, substr(index, 2, 2))))
+      
+      # Create multipliers for Y0 and Y1 (these depend on corstr)
+      # FIXME: ONLY ALLOWS CONSTANT SIGMA RIGHT NOW
+      if (corstr %in% c("identity", "exchangeable")) {
+        c0 <- rho * sigma * sigma / 
+          (sigma * (rho * sigma + sigma))
+        c1 <- rho * sigma / 
+          (rho * sigma + sigma)
+      } else if (corstr == "ar1") {
+        c0 <- 0
+        c1 <- rho * sigma / sigma
+      }
       
       assign(paste0("v2.", substr(index, 1, 1), ".NR.", substr(index, 2, 2)),
              sigma.nr^2 -
-               (rho / (1 + rho))^2 * var(s$Y0[R == 0] + Y1[R == 0]),
+               var(c0 * s$Y0[R == 0] + c1 * Y1[R == 0]),
              envir = varEnv)
     }
     for (index in rNames) {
@@ -595,12 +608,25 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
       R <- with(s, get(paste0("R.", substr(index, 1, 1))))
       sigma.r <- get(paste0("sigma.r", index), env = varEnv)
       
+      # Create multipliers for Y0 and Y1 (these depend on corstr)
+      # FIXME: ONLY ALLOWS CONSTANT SIGMA RIGHT NOW
+      if (corstr %in% c("identity", "exchangeable")) {
+        c0 <- rho * sigma * sigma / 
+          (sigma * (rho * sigma + sigma))
+        c1 <- rho * sigma / 
+          (rho * sigma + sigma)
+      } else if (corstr == "ar1") {
+        c0 <- 0
+        c1 <- rho * sigma / sigma
+      }
+      
       assign(paste0("v2.", substr(index, 1, 1), ".R.", substr(index, 2, 2)),
-             sigma.r^2 - (rho / (1 + rho))^2 * var(s$Y0[R == 1] + Y1[R == 1]),
+             sigma.r^2 - var(c0 * s$Y0[R == 1] + c1 * Y1[R == 1]),
              envir = varEnv)
     }
     
-    v <- do.call(cbind, lapply(names(varEnv), function(v) get(v, envir = varEnv)))
+    v <- do.call(cbind, lapply(names(varEnv),
+                               function(v) get(v, envir = varEnv)))
     colnames(v) <- names(varEnv)
     
     cbind(simGrid[i, ], "sigma.r0.LBf" = sigma.r0.LBf,
