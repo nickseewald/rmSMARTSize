@@ -150,7 +150,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   if (notify) slackr_bot(simGrid.delta3$simName[scenario])
   assign(simGrid.delta3$simName[scenario],
          try(simulateSMART(
-           n = 2e4, gammas = gammas,
+           gammas = gammas,
            lambdas = lambdas,
            r1 = r1,
            r0 = r0,
