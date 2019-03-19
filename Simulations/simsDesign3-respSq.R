@@ -180,7 +180,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   save(file = here("Results", "simsDesign3-delta3-respSq.RData"),
        list = c(grep("d3_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
-                "simGrid.delta3", "invalidSIms.delta3"),
+                "simGrid.delta3", "invalidSims.delta3"),
        precheck = TRUE)
 }
 

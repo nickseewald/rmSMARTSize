@@ -443,12 +443,12 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
 #'
 #' @examples
 computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
-                           corstr, design, balanceRand = F,
+                           corstr = c("identity", "exchangeable", "ar1"), design, balanceRand = F,
                            varCombine = mean,
                            empirical = F, seed = 6781) {
   
-  # if (design == 3) stop("computeVarGrid doesn't yet work for design 3")
-  
+  corstr <- match.arg(corstr)
+    
   if (is.list(varCombine) & length(varCombine) == 2) {
     varCombine.11 <- varCombine[[1]]
     varCombine.00 <- varCombine[[2]]

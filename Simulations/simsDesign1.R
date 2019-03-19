@@ -39,16 +39,23 @@ tol <- 1e-8
 sigma <- 6
 
 # Generate a grid of simulation scenarios
-simGrid <- expand.grid(list(
-  sharp = c(FALSE, TRUE),
-  r0 = c(.4, .6),
-  r1 = c(.4, .6),
-  corr = c(0, .3, .6, .8),
-  oldModel = c(FALSE, TRUE),
-  respFunction = list("indep" = "response.indep", "beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT"),
-  respDirection = c("high", "low")
-), stringsAsFactors = F)
+simGrid <- expand.grid(
+  list(
+    sharp = c(FALSE, TRUE),
+    r0 = c(.4, .6),
+    r1 = c(.4, .6),
+    corr = c(0, .3, .6, .8),
+    oldModel = c(FALSE, TRUE),
+    respFunction = list(
+      "indep" = "response.indep",
+      "beta" = "response.beta",
+      "oneT" = "response.oneT",
+      "twoT" = "response.twoT"
+    ),
+    respDirection = c("high", "low")
+  ),
+  stringsAsFactors = F
+)
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
 
@@ -86,7 +93,6 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$oldModel, ".old", ""),
          ifelse(x$sharp, ".sharp", ""))
 })
-
 
 save(file = here("Results", "simsDesign1-delta3-basic.RData"),
      list = c("sigma", "simGrid.delta3",
@@ -152,36 +158,35 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   # Simulate
   if (notify) slackr_bot(simGrid.delta3$simName[scenario])
   assign(simGrid.delta3$simName[scenario],
-         try(
-           simulateSMART(
-             gammas = gammas,
-             lambdas = lambdas,
-             r1 = r1,
-             r0 = r0,
-             times = times,
-             spltime = spltime,
-             alpha = .05,
-             power = .8,
-             delta = 0.3,
-             design = 1,
-             conservative = !sharp,
-             sigma = sigma,
-             sigma.r1 = sigma.r1,
-             sigma.r0 = sigma.r0,
-             variances = vars,
-             pool.time = TRUE,
-             L = c(0, 0, 2, 0, 2, 2, 2, 0, 0),
-             corstr = "exch",
-             rho = corr[1],
-             rho.r1 = corr[2],
-             rho.r0 = corr[3],
-             respFunction = get(unlist(respFunc.name)),
-             respDirection = respDir,
-             niter = niter,
-             notify = notify,
-             old = old,
-             postIdentifier = postID
-           )),
+         try(simulateSMART(
+           gammas = gammas,
+           lambdas = lambdas,
+           r1 = r1,
+           r0 = r0,
+           times = times,
+           spltime = spltime,
+           alpha = .05,
+           power = .8,
+           delta = 0.3,
+           design = 1,
+           conservative = !sharp,
+           sigma = sigma,
+           sigma.r1 = sigma.r1,
+           sigma.r0 = sigma.r0,
+           variances = vars,
+           pool.time = TRUE,
+           L = c(0, 0, 2, 0, 2, 2, 2, 0, 0),
+           corstr = "exch",
+           rho = corr[1],
+           rho.r1 = corr[2],
+           rho.r0 = corr[3],
+           respFunction = get(unlist(respFunc.name)),
+           respDirection = respDir,
+           niter = niter,
+           notify = notify,
+           old = old,
+           postIdentifier = postID
+         )),
          envir = .GlobalEnv)
   
   # Save the result

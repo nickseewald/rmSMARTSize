@@ -33,7 +33,7 @@ source(here("init.R"), echo = FALSE)
 times <- c(0, 1, 2)
 spltime <- 1
 
-niter <- 30
+niter <- 3000
 maxiter.solver <- 1000
 tol <- 1e-8
 
@@ -41,6 +41,7 @@ sigma <- 6
 sigma.r1 <- 6
 sigma.r0 <- 6
 
+# Generate a grid of simulation scenarios
 simGrid <- expand.grid(
   list(
     sharp = c(FALSE, TRUE),
@@ -50,7 +51,8 @@ simGrid <- expand.grid(
     respFunction = "response.indep",
     oldModel = TRUE
   ),
-  stringsAsFactors = F)
+  stringsAsFactors = F
+)
 
 simGrid$corr.r1[simGrid$corr == .3 & simGrid$r1 == .4] <- .525
 simGrid$corr.r0[simGrid$corr == .3 & simGrid$r0 == .4] <- .525
@@ -75,14 +77,15 @@ if(notify) {
   rm(startString)
 }
 
+
 ##### Effect size: 0.3 #####
 
 gammas <- c(35, -4, 2.2, -1.6, -1.3, 0.4, -0.4, 0.4, 0.4)
 lambdas <- c(0.3, 0.4)
 
 save(file = here("Results", "simsDesign1-delta3-nrCorrDown50.RData"),
-     list = c("sigma", "simGrid",
-              "gammas", "lambdas", "seed", "times", "spltime"))
+     list = c("sigma", "simGrid", "gammas", "lambdas",
+              "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid)) {
   # Extract simulation conditions from simGrid
@@ -169,8 +172,8 @@ gammas <- c(35, -4, 2.2, -1.6, -0.7, 0.4, -0.4, 0.4, 0.4)
 lambdas <- c(0.3, 0.4)
 
 save(file = here("Results", "simsDesign1-delta5-nrCorrDown50.RData"),
-     list = c("sigma", "simGrid",
-              "gammas", "lambdas", "seed", "times", "spltime"))
+     list = c("sigma", "simGrid", "gammas", "lambdas",
+              "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid)) {
   # Extract simulation conditions from simGrid
@@ -199,7 +202,9 @@ for (scenario in 1:nrow(simGrid)) {
                     ".nrCorrDown50")
   rm(x)
   
+  # Set the seed for every unique simulation
   set.seed(seed)
+  
   assign(simName,
          try(simulateSMART(
            gammas = gammas,

@@ -39,16 +39,23 @@ tol <- 1e-8
 sigma <- 6
 
 # Generate a grid of simulation scenarios
-simGrid <- expand.grid(list(
-  sharp = c(FALSE, TRUE),
-  r0 = c(.4, .6),
-  r1 = c(.4, .6),
-  corr = c(0, .3, .6, .8),
-  oldModel = c(FALSE, TRUE),
-  respFunction = list("indep" = "response.indep", "beta" = "response.beta",
-                      "oneT" = "response.oneT", "twoT" = "response.twoT"),
-  respDirection = c("high", "low")
-))
+simGrid <- expand.grid(
+  list(
+    sharp = c(FALSE, TRUE),
+    r0 = c(.4, .6),
+    r1 = c(.4, .6),
+    corr = c(0, .3, .6, .8),
+    oldModel = c(FALSE, TRUE),
+    respFunction = list(
+      "indep" = "response.indep",
+      "beta" = "response.beta",
+      "oneT" = "response.oneT",
+      "twoT" = "response.twoT"
+    ),
+    respDirection = c("high", "low")
+  ),
+  stringsAsFactors = FALSE
+)
 
 simGrid$corr.r1 <- simGrid$corr.r0 <- simGrid$corr
 
@@ -64,6 +71,7 @@ if(notify) {
   slackr_bot(startString)
   rm(startString)
 }
+
 
 #### Effect size: 0.3 #####
 
@@ -151,22 +159,35 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   # Simulate
   if (notify) slackr_bot(simGrid.delta3$simName[scenario])
   assign(simGrid.delta3$simName[scenario],
-         try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.3, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
+         try(simulateSMART(
+           gammas = gammas,
+           lambdas = lambdas,
+           r1 = r1,
+           r0 = r0,
+           times = times,
+           spltime = spltime,
+           alpha = .05,
+           power = .8,
+           delta = 0.3,
+           design = 2,
+           conservative = !sharp,
+           sigma = sigma,
+           sigma.r1 = sigma.r1,
+           sigma.r0 = sigma.r0,
+           variances = vars,
+           pool.time = TRUE,
+           L = c(0, 0, 2, 0, 2, 2, 0),
+           corstr = "exch",
+           rho = corr[1],
+           rho.r1 = corr[2],
+           rho.r0 = corr[3],
+           respFunction = get(unlist(respFunc.name)),
+           respDirection = respDir,
+           niter = niter,
+           notify = notify,
+           old = old,
+           postIdentifier = postID
+         )),
          envir = .GlobalEnv)
 
   # Save the result
@@ -177,11 +198,15 @@ for (scenario in 1:nrow(simGrid.delta3)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.3\n",
-                   "for basic scenarios."))
+if (notify) {
+  x <- paste("All simulations are complete for Design 2,", 
+             "effect size 0.3\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 rm(list = grep("d2_delta3", ls(), value = T))
+
 
 
 ##### Effect size: 0.5 #####
@@ -267,23 +292,36 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   set.seed(seed)
   
   assign(simGrid.delta5$simName[scenario],
-         try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.5, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
-           envir = .GlobalEnv)
+         try(simulateSMART(
+           gammas = gammas,
+           lambdas = lambdas,
+           r1 = r1,
+           r0 = r0,
+           times = times,
+           spltime = spltime,
+           alpha = .05,
+           power = .8,
+           delta = 0.5,
+           design = 2,
+           conservative = !sharp,
+           sigma = sigma,
+           sigma.r1 = sigma.r1,
+           sigma.r0 = sigma.r0,
+           variances = vars,
+           pool.time = TRUE,
+           L = c(0, 0, 2, 0, 2, 2, 0),
+           corstr = "exch",
+           rho = corr[1],
+           rho.r1 = corr[2],
+           rho.r0 = corr[3],
+           respFunction = get(unlist(respFunc.name)),
+           respDirection = respDir,
+           niter = niter,
+           notify = notify,
+           old = old,
+           postIdentifier = postID
+         )),
+         envir = .GlobalEnv)
   
   save(file = here("Results", "simsDesign2-delta5-basic.RData"),
        list = c(grep("d2_delta5", ls(), value = T), "sigma",
@@ -292,9 +330,12 @@ for (scenario in 1:nrow(simGrid.delta5)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.5\n",
-                   "for basic scenarios."))
+if (notify) {
+  x <- paste("All simulations are complete for Design 2,", 
+             "effect size 0.5\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
 rm(list = grep("d2_delta5", ls(), value = T))
 
@@ -383,22 +424,35 @@ for (scenario in 1:nrow(simGrid.delta8)) {
   set.seed(seed)
   
   assign(simGrid.delta8$simName[scenario],
-         try(
-           simulateSMART(gammas = gammas, lambdas = lambdas, r1 = r1, r0 = r0,
-                         times = times, spltime = spltime,
-                         alpha = .05, power = .8, delta = 0.8, design = 2,
-                         conservative = !sharp,
-                         sigma = sigma, sigma.r1 = sigma.r1,
-                         sigma.r0 = sigma.r0,
-                         variances = vars,
-                         pool.time = TRUE, L = c(0, 0, 2, 0, 2, 2, 0),
-                         corstr = "exch", rho = corr[1], rho.r1 = corr[2],
-                         rho.r0 = corr[3],
-                         respFunction = get(unlist(respFunc.name)),
-                         respDirection = respDir,
-                         niter = niter, notify = notify,
-                         old = old,
-                         postIdentifier = postID)),
+         try(simulateSMART(
+           gammas = gammas,
+           lambdas = lambdas,
+           r1 = r1,
+           r0 = r0,
+           times = times,
+           spltime = spltime,
+           alpha = .05,
+           power = .8,
+           delta = 0.8,
+           design = 2,
+           conservative = !sharp,
+           sigma = sigma,
+           sigma.r1 = sigma.r1,
+           sigma.r0 = sigma.r0,
+           variances = vars,
+           pool.time = TRUE,
+           L = c(0, 0, 2, 0, 2, 2, 0),
+           corstr = "exch",
+           rho = corr[1],
+           rho.r1 = corr[2],
+           rho.r0 = corr[3],
+           respFunction = get(unlist(respFunc.name)),
+           respDirection = respDir,
+           niter = niter,
+           notify = notify,
+           old = old,
+           postIdentifier = postID
+         )),
          envir = .GlobalEnv)
 
   save(file = here("Results", "simsDesign2-delta8-basic.RData"),
@@ -408,11 +462,14 @@ for (scenario in 1:nrow(simGrid.delta8)) {
        precheck = TRUE)
 }
 
-if (notify)
-  slackr_bot(paste("All simulations are complete for effect size 0.8\n",
-                   "for basic scenarios."))
+if (notify) {
+  x <- paste("All simulations are complete for Design 2,", 
+             "effect size 0.3\n for basic scenarios.")
+  slackr_bot(x)
+  rm(x)
+}
 
-rm(list = grep("d2_delta8", ls(), value = T))
+rm(list = grep("d2_delta3", ls(), value = T))
 
 if(check.dompi) {
   closeCluster(clus)
