@@ -60,13 +60,13 @@ simGrid$corr.r1[simGrid$corr == 0.3 & simGrid$r1 == .6] <- .400
 simGrid$corr.r0[simGrid$corr == 0.3 & simGrid$r0 == .6] <- .400
 
 simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .747
-simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .747
-simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .747
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .4] <- .747
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .6] <- .747
 simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .747
 
 simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .874
-simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .874
-simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .874
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .4] <- .874
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .6] <- .874
 simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .874
 
 
