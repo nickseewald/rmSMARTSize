@@ -1,4 +1,4 @@
-# simsDesign2-nrCorrDown50.R
+# simsDesign3-nrCorrDown50.R
 # Copyright 2018 Nicholas J. Seewald
 #
 # This file is part of rmSMARTsize.
@@ -17,7 +17,7 @@
 # along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
 ### ---------------------------------------------- ###
-###             Simulations for Design 2           ###
+###             Simulations for Design 3           ###
 ### Violation of Conditional Covariance Assumption ###
 ###   50% Relative Reduction in NRs Correlation    ###
 ### ---------------------------------------------- ###
@@ -33,7 +33,7 @@ source(here("init.R"), echo = FALSE)
 times <- c(0, 1, 2)
 spltime <- 1
 
-niter <- 3000
+niter <- 5000
 maxiter.solver <- 1000
 tol <- 1e-8
 
@@ -54,24 +54,24 @@ simGrid <- expand.grid(
   stringsAsFactors = FALSE
 )
 
-simGrid$corr.r1[simGrid$corr == .3 & simGrid$r1 == .4] <- .525
-simGrid$corr.r0[simGrid$corr == .3 & simGrid$r0 == .4] <- .525
-simGrid$corr.r1[simGrid$corr == .3 & simGrid$r1 == .6] <- .400
-simGrid$corr.r0[simGrid$corr == .3 & simGrid$r0 == .6] <- .400
+simGrid$corr.r1[simGrid$corr == 0.3 & simGrid$r1 == .4] <- .525
+simGrid$corr.r0[simGrid$corr == 0.3 & simGrid$r0 == .4] <- .525
+simGrid$corr.r1[simGrid$corr == 0.3 & simGrid$r1 == .6] <- .400
+simGrid$corr.r0[simGrid$corr == 0.3 & simGrid$r0 == .6] <- .400
 
-simGrid$corr.r1[simGrid$corr == .6 & simGrid$r1 == .4] <- .747
-simGrid$corr.r0[simGrid$corr == .6 & simGrid$r0 == .4] <- .747
-simGrid$corr.r1[simGrid$corr == .6 & simGrid$r1 == .6] <- .747
-simGrid$corr.r0[simGrid$corr == .6 & simGrid$r0 == .6] <- .747
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .747
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .747
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .747
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .747
 
-simGrid$corr.r1[simGrid$corr == .8 & simGrid$r1 == .4] <- .874
-simGrid$corr.r0[simGrid$corr == .8 & simGrid$r0 == .4] <- .874
-simGrid$corr.r1[simGrid$corr == .8 & simGrid$r1 == .6] <- .874
-simGrid$corr.r0[simGrid$corr == .8 & simGrid$r0 == .6] <- .874
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .874
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .874
+simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .874
+simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .874
 
 
 # Send initial notification that simulations are about to start
-if(notify) {
+if (notify) {
   startString <- paste("All systems go so far!\nRunning on", nWorkers, "cores.")
   slackr_bot(startString)
   rm(startString)
@@ -80,12 +80,12 @@ if(notify) {
 
 ##### Effect size: 0.3 #####
 
-gammas <- c(33.5, -0.8, 0.9, -0.8, 0.4, -0.4, 0.1)
-lambdas <- c(0.1, -0.5)
+gammas <- c(33.5, -0.8, 0.9, -0.4, -0.1, 0.2)
+lambdas <- c(0.8, 0)
 
-save(file = here("Results", "simsDesign2-delta3-nrCorrDown50.RData"),
-     list = c("sigma", "simGrid", "gammas", "lambdas",
-              "seed", "times", "spltime"))
+save(file = here("Results", "simsDesign3-delta3-nrCorrDown50.RData"),
+     list = c("sigma", "sigma.r1", "sigma.r0", "simGrid",
+              "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid)) {
   # Extract simulation conditions from simGrid.delta3
@@ -104,9 +104,9 @@ for (scenario in 1:nrow(simGrid)) {
     ifelse(sharp, "sharp n",
            "conservative n")
   )
-
+  
   x <- simGrid[scenario, ]
-  simName <- paste0("d2_delta3.",
+  simName <- paste0("d3_delta3.",
                     ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                            paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
                     ".exch", x$corr * 10,
@@ -116,7 +116,7 @@ for (scenario in 1:nrow(simGrid)) {
   
   # Set the seed for every unique simulation
   set.seed(seed)
-
+  
   # Simulate
   if (notify) slackr_bot(simName)
   assign(simName,
@@ -130,12 +130,12 @@ for (scenario in 1:nrow(simGrid)) {
            alpha = .05,
            power = .8,
            delta = 0.3,
-           design = 2,
+           design = 3,
            conservative = !sharp,
            sigma = sigma,
            sigma.r1 = sigma.r1,
            sigma.r0 = sigma.r0,
-           L = c(0, 0, 2, 0, 2, 2, 0),
+           L = c(0, 0, 2, 0, 2, 1),
            corstr = "exch",
            rho = corr[1],
            rho.r1 = corr[2],
@@ -147,17 +147,17 @@ for (scenario in 1:nrow(simGrid)) {
            postIdentifier = postID
          )),
          envir = .GlobalEnv)
-
+  
   # Save the result
-  save(file = here("Results", "simsDesign2-delta3-nrCorrDown50.RData"),
-       list = c(grep("d2_delta3", ls(), value = T), "sigma", "sigma.r1",
+  save(file = here("Results", "simsDesign3-delta3-nrCorrDown50.RData"),
+       list = c(grep("d3_delta3", ls(), value = T), "sigma", "sigma.r1",
                 "sigma.r0", "simGrid", "gammas", "lambdas", "seed", "times",
                 "spltime"),
        precheck = TRUE)
 }
 
 if (notify) {
-  x <- paste("All simulations are complete for Design 2,", 
+  x <- paste("All simulations are complete for Design 3,", 
              "effect size 0.3\n for nrCorrDown50 scenarios.")
   slackr_bot(x)
   rm(x)
@@ -168,12 +168,12 @@ rm(list = grep("d2_delta3", ls(), value = T))
 
 ##### Effect size: 0.5 #####
 
-gammas <- c(33.5, -0.8, 1.1, -0.8, 0.8, -0.4, 0.1)
-lambdas <- c(0.1, -0.5)
+gammas <- c(33.5, -0.8, 0.9, -0.4, 0.2, 0.8)
+lambdas <- c(0.8, 0)
 
-save(file = here("Results", "simsDesign2-delta5-nrCorrDown50.RData"),
-     list = c("sigma", "simGrid", "gammas", "lambdas",
-              "seed", "times", "spltime"))
+save(file = here("Results", "simsDesign3-delta5-nrCorrDown50.RData"),
+     list = c("sigma", "simGrid", "sigma.r1", "sigma.r0",
+              "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid)) {
   # Extract simulation conditions from simGrid.delta5
@@ -194,7 +194,7 @@ for (scenario in 1:nrow(simGrid)) {
   )
   
   x <- simGrid[scenario, ]
-  simName <- paste0("d2_delta5.",
+  simName <- paste0("d3_delta5.",
                     ifelse(x$r0 == x$r1, paste0("r", x$r0* 10),
                            paste0("r0_", x$r0*10, ".r1_", x$r1*10)),
                     ".exch", x$corr * 10,
@@ -218,12 +218,12 @@ for (scenario in 1:nrow(simGrid)) {
            alpha = .05,
            power = .8,
            delta = 0.5,
-           design = 2,
+           design = 3,
            conservative = !sharp,
            sigma = sigma,
            sigma.r1 = sigma.r1,
            sigma.r0 = sigma.r0,
-           L = c(0, 0, 2, 0, 2, 2, 0),
+           L = c(0, 0, 2, 0, 2, 1),
            corstr = "exch",
            rho = corr[1],
            rho.r1 = corr[2],
@@ -236,21 +236,21 @@ for (scenario in 1:nrow(simGrid)) {
          )),
          envir = .GlobalEnv)
   
-  save(file = here("Results", "simsDesign2-delta5-nrCorrDown50.RData"),
-       list = c(grep("d2_delta5", ls(), value = T), "sigma", "sigma.r1",
-                "sigma.r0", "simGrid", "gammas", "lambdas", "seed", "times",
-                "spltime"),
+  save(file = here("Results", "simsDesign3-delta5-nrCorrDown50.RData"),
+       list = c(grep("d3_delta5", ls(), value = T), "sigma", "sigma.r1",
+                "sigma.r0", "gammas", "lambdas", "seed", "times", "spltime",
+                "simGrid"),
        precheck = TRUE)
 }
 
 if (notify) {
-  x <- paste("All simulations are complete for Design 2,", 
+  x <- paste("All simulations are complete for Design 3,", 
              "effect size 0.5\n for nrCorrDown50 scenarios.")
   slackr_bot(x)
   rm(x)
 }
 
-rm(list = grep("d2_delta5", ls(), value = T))
+rm(list = grep("d3_delta5", ls(), value = T))
 
 if(check.dompi) {
   closeCluster(clus)
