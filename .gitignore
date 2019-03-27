@@ -3,6 +3,9 @@
 *.dcf
 *.pbs
 *.here
+old/*.*
+outFiles/*.*
+updatedGenerativeModel/*.*
 
 # Windows image file caches
 Thumbs.db
