@@ -30,6 +30,7 @@ library(here)
 
 source(here("functions.R"))
 source(here("generativeFunctions.R"))
+source(here("sampleSize.R"))
 source(here("generateSMART.R"))
 source(here("simulateSMART.R"))
 

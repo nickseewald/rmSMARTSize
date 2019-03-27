@@ -1530,46 +1530,6 @@ response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
   return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-sample.size <- function(delta, r = NULL, r1 = r, r0 = r, rho, alpha = 0.05, power = .8,
-                        design = 2, rounding = c("up", "down"),
-                        conservative = TRUE) {
-  rounding <- match.arg(rounding)
-  
-  if (is.null(r)) r <- mean(c(r1, r0))
-  
-  # Input checks
-  if (!is.null(rounding) & !(rounding %in% c("up", "down"))) 
-    stop("rounding must be either up or down")
-  nid <- (4 * (qnorm(1 - alpha / 2) + qnorm(power))^2) / delta^2
-  correction <- 1 - rho^2
-  if (design == 1) {
-    designEffect <- 2
-    if (!conservative) {
-      correction <- (1-rho^2) - (1-rho)*rho^2 / (2*(1+rho))
-    }
-  } else if (design == 2) {
-    designEffect <- ((2 - r1) + (2 - r0)) / 2
-    if (!conservative) {
-      correction <- ((1 - rho) * (2 * rho + 1)) / (1 + rho) + 
-        (1 - rho)/(1 + rho) * rho^2 / (2 - r)
-    }
-  } else if (design == 3) {
-    designEffect <- (3 - r1) / 2
-    if (!conservative) {
-      correction <- ((3-r1)*(1+2*rho) + 2*rho^2) * (1-rho)/((3-r1)*(1+rho))
-    }
-  }
-  else stop("Not a valid design indicator.")
-  
-  if (rounding == "up") {
-    n <- ceiling(nid * designEffect * correction)
-  } else if (rounding == "down") {
-    n <- floor(nid * designEffect * correction)
-  }
-  message('generating sample size')
-  return(n)
-}
-
 ### Wrapper for all the estimation functions
 #' Estimation for repeated-measures SMART data
 #'
