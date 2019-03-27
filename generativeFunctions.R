@@ -411,13 +411,10 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
       )))
     }
   } else {
-    sqrt(max(
-      c(0.1,
-        sigma^2 / r - (1 - r) * 
+    sqrt(sigma^2 / r - (1 - r) * 
           max(c(
             (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2, 
             (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2)) - stage1var)
-    ))
   }
 }
 
