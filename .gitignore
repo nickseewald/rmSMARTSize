@@ -1,11 +1,11 @@
-*.RData
 *.Rhistory
 *.dcf
 *.pbs
 *.here
-old/*.*
-outFiles/*.*
-updatedGenerativeModel/*.*
+old
+outFiles
+updatedGenerativeModel
+Results/*/*.RData
 
 # Windows image file caches
 Thumbs.db
