@@ -64,10 +64,10 @@ simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .4] <- .747
 simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .6] <- .747
 simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .747
 
-simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .4] <- .874
-simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .4] <- .874
-simGrid$corr.r1[simGrid$corr == 0.6 & simGrid$r1 == .6] <- .874
-simGrid$corr.r0[simGrid$corr == 0.6 & simGrid$r0 == .6] <- .874
+simGrid$corr.r1[simGrid$corr == 0.8 & simGrid$r1 == .4] <- .874
+simGrid$corr.r0[simGrid$corr == 0.8 & simGrid$r0 == .4] <- .874
+simGrid$corr.r1[simGrid$corr == 0.8 & simGrid$r1 == .6] <- .874
+simGrid$corr.r0[simGrid$corr == 0.8 & simGrid$r0 == .6] <- .874
 
 
 # Send initial notification that simulations are about to start

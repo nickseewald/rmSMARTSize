@@ -37,7 +37,7 @@ niter <- 3000
 maxiter.solver <- 1000
 tol <- 1e-8
 
-sigma <- 6
+sigma <- 5
 
 # Generate a grid of simulation scenarios
 simGrid <- expand.grid(
@@ -70,12 +70,12 @@ if(notify) {
 
 #### Effect size: 0.3 #####
 
-gammas <- c(35, -4, 2.2, -1.6, -1.3, 0.4, -0.4, 0.4, 0.4)
+gammas <- c(35, -4, 1.95, -1.6, -1.2, 0.4, -0.4, 0.4, 0.4)
 lambdas <- c(0.3, 0.4)
 
 simGrid.delta3 <- computeVarGrid(simGrid, times, spltime, gammas,
                                  sigma, corstr = "exch", design = 1,
-                                 varCombine = function(x) x[1] * 1.01)
+                                 varCombine = function(x) x[1] * 1.05)
 
 # Construct string to name simulation results
 simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
@@ -91,8 +91,15 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
+# Check validity of scenarios before trying to simulate them
+# and remove any "invalid" ones
+invalidSims.delta3 <- checkVarGridValidity(simGrid.delta3)
+simGrid.delta3 <- simGrid.delta3[!is.element(simGrid.delta3$simName, 
+                                             invalidSims.delta3$simName), ]
+rownames(simGrid.delta3) <- 1:nrow(simGrid.delta3)
+
 save(file = here("Results", "simsDesign1-delta3-respSq.RData"),
-     list = c("sigma", "simGrid.delta3",
+     list = c("sigma", "simGrid.delta3", "invalidSims.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
 
 for (scenario in 1:nrow(simGrid.delta3)) {
