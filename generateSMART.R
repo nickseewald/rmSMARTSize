@@ -88,6 +88,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   dtrTriples <- dtrNames(design)
 
   #### LEGACY GENERATIVE MODEL ####
+  # NB: This model assumes response is independent of all previous outcomes
   if (old) {
     
     d <- data.frame("id"   = 1:n,
@@ -118,6 +119,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     d$A2NR <- d$A2R <- rep(0, n)
     
     if (design == 1) {
+      
+      ## Second-stage randomizations for Design 1
       if (balanceRand) {
         A1Rcombos <- expand.grid("A1" = c(1, -1), "R" = c(0, 1))
         for (i in 1:nrow(A1Rcombos)) {
@@ -146,6 +149,8 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
           2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
       }
     } else if (design == 2) {
+      
+      # Second-stage randomizations for Design 2
       d$A2NR <- d$A2R <- rep(0, n)
       if (balanceRand) {
         for (i in c(-1, 1)) {
@@ -161,6 +166,14 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
           2 * rbinom(sum(d$A1 == -1 & d$R == 0), 1, .5) - 1
       }
     } else if (design == 3) {
+      
+      # Second-stage randomizations for Design 3
+      if (balanceRand) {
+          s <- sample(which(d$A1 == 1 & d$R == 0),
+                      floor(sum(d$A1 == 1 & d$R == 0) / 2))
+          d$A2NR[s] <- 1
+          d$A2NR[setdiff(which(d$A1 == 1 & d$R == 0), s)] <- -1
+      }
       d$A2NR[d$A1 == 1 & d$R == 0] <-
         2 * rbinom(sum(d$A1 == 1 & d$R == 0), 1, .5) - 1
     }

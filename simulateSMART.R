@@ -285,17 +285,17 @@ simulateSMART <- function(n = NULL,
                                       maxiter.solver,
                                       tol))
                 
-                # param.hat2 <-
-                #   multiroot(
-                #     esteqn.compute,
-                #     start = rep(0, 7),
-                #     jacfunc = esteqn.jacobian,
-                #     d = d1,
-                #     V = diag(rep(1, length(times))),
-                #     times = times,
-                #     spltime = spltime,
-                #     design = 2
-                #   )
+                param.hat2 <-
+                  multiroot(
+                    esteqn.compute,
+                    start = rep(0, 7),
+                    jacfunc = esteqn.jacobian,
+                    d = d1,
+                    V = diag(rep(1, length(times))),
+                    times = times,
+                    spltime = spltime,
+                    design = 2
+                  )
                 
                 sigma2.hat <- estimate.sigma2(d1,
                                               times,

@@ -39,13 +39,19 @@ generateStage1 <- function(n,
     stop("There's a problem with n being generated")
   
   corstr <- match.arg(corstr)
+  
+  if (corstr == "exchangeable") {
+    if (length(sigma) != 1) 
+      stop("Currently the exchangeable structure can only handle a common sigma")
+  }
   sigma <- reshapeSigma(sigma, times, design)
+  
   
   ## Initialize data frame
   d <- data.frame("id" = 1:n)
   
   ## Generate baseline outcome
-  d$Y0 <- gammas[1] + rnorm(n, 0, sigma)
+  d[[paste0("Y", times[1])]] <- gammas[1] + rnorm(n, 0, sigma)
   
   ## Generate observed treatment assignment
   if (balanceRand) {
@@ -57,15 +63,63 @@ generateStage1 <- function(n,
   }
   
   ## Generate stage 1 potential outcomes
+  stage1times <- times[times > times[1] & times <= spltime]
+  
   if (corstr %in% c("exchangeable", "identity")) {
     # FIXME: This only works for time 1 right now! Any other time will not have 
     # proper correlation structure
-    d[, paste0("Y", times[times > 0 & times <= spltime], ".0")] <-
-      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + 
-      rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    d[, paste0("Y", times[times > 0 & times <= spltime], ".1")] <-
-      (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + 
-      rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    rhoCoef <- sapply(1:length(stage1times), function(j) rho / (1 + (j-1)*rho))
+    
+    # Loop over timepoints in the first stage *after* treatment assignment
+    for (tp in stage1times) {
+      # For each timepoint, get all timepoints prior
+      # (note that baseline gets left out for now -- dif. naming convention)
+      previousTimes <- stage1times[stage1times < tp]
+      # Get the names of the Y's corresponding to those previous times
+      if (length(previousTimes) != 0) {
+        previousYstring.0 <- 
+          paste0("Y(", times[1], "|(",
+                 paste(previousTimes, collapse = "\\.0|"),
+                 "\\.0))")
+        previousYstring.1 <- 
+          paste0("Y(", times[1], "|(", 
+                 paste(previousTimes, collapse = "\\.1|"),
+                 "\\.1))")
+      } else {
+        previousYstring.0 <- previousYstring.1 <- paste0("Y", times[1])
+      }
+      
+      # j is the index of the timepoint
+      j <- which(tp == stage1times)
+      
+      errorVar <- sigma^2 - (rho * sigma / (1 + (j-1)*rho))^2 *
+        (j + 2 * rho * choose(j, 2))
+      
+      # Assign Y values 
+      # FIXME: NEED VARIANCES!!!
+      d[[paste0("Y", tp, ".0")]] <-
+        rhoCoef[j] *  rowSums(as.matrix(d[, grep(previousYstring.0, names(d))],
+                                        nrow = n)) + 
+        (1-(j*rho)/(1+(j-1)*rho)) * gammas[1] +
+        (spltime - rho*(sum(previousTimes))/(1 + (j-1)*rho)) *
+        (gammas[2] + gammas[3] * (-1)) +
+        rnorm(n, 0, sqrt(errorVar))
+      
+      d[[paste0("Y", tp, ".1")]] <-
+        rhoCoef[j] *  rowSums(as.matrix(d[, grep(previousYstring.1, names(d))],
+                                        nrow = n)) + 
+        (1-(j*rho)/(1+(j-1)*rho)) * gammas[1] +
+        (spltime - rho*(sum(previousTimes))/(1 + (j-1)*rho)) *
+        (gammas[2] + gammas[3] * (1)) +
+        rnorm(n, 0, sqrt(errorVar))
+    }
+    
+    # d[, paste0("Y", stage1times, ".0")] <-
+    #   (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + 
+    #   rnorm(n, 0, sqrt((1-rho^2))*sigma)
+    # d[, paste0("Y", stage1times, ".1")] <-
+    #   (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + 
+    #   rnorm(n, 0, sqrt((1-rho^2))*sigma)
   } else if (corstr == "ar1") {
     # FIXME: This only works for time 1 right now! Any other time will not have 
     # proper correlation structure
@@ -81,9 +135,9 @@ generateStage1 <- function(n,
   }
   
   sigmaRespFunc <- sigma[which(times == spltime), 
-                         sapply(unique(substr(dtrNames(3),1,1)), 
+                         sapply(unique(substr(dtrNames(design),1,1)), 
                                 function(x) 
-                                  min(which(x == substr(dtrNames(3), 1, 1))))]
+                                  min(which(x == substr(dtrNames(design), 1, 1))))]
   
   ## Generate response status
   resp <- respFunction(d, gammas, r1, r0, respDirection, sigmaRespFunc,

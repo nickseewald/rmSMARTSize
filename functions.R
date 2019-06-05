@@ -1567,7 +1567,11 @@ SMART.estimate <-
            tol = 10e-8,
            pool.time = FALSE,
            pool.dtr = FALSE) {
+    # partial matching for corstr argument
     corstr <- match.arg(corstr)
+    
+    # check inputs
+    
     
     d1 <-
       reshape(
