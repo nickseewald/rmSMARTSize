@@ -1,6 +1,10 @@
 # rmSMARTSize
 Companion code for "Sample size considerations for comparing dynamic treatment regimens in a sequential multiple-assignment randomized trial with a continuous longitudinal outcome"
 
+## Usage Note
+The code in this repository is in active development. To view or use stable code, see the appropriate releases:
+- [v1.0.0](../../releases/tag/v1.0.0): Release accompanying initial submission to _Statistical Methods in Medical Research_.
+
 ## File Descriptions
 - [sampleSize.R](sampleSize.R): Contains function to compute sample size for a SMART with a longitudinal outcome in which the primary aim is to compare two embedded DTRs.
 - [functions.R](functions.R): Helper functions for simulations and parameter estimation.
