@@ -139,24 +139,6 @@ for (scenario in 1:nrow(simGrid.delta3)) {
     ifelse(sharp, "sharp n",
            "conservative n")
   )
-  
-  if ((simGrid.delta3$sigma.r0.LB[scenario] >
-       simGrid.delta3$sigma.r0.UB[scenario]) |
-      (simGrid.delta3$sigma.r1.LB[scenario] >
-       simGrid.delta3$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design 2\n",
-                         postID,
-                         "delta = 0.3\n",
-                         "true corstr = exchangeable(", corr[1], ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
-    if (notify) slackr_bot(designText)
-    warnText <- paste("It is not possible to not violate the conditional",
-                      "variation working assumption in this scenario.",
-                      "Skipping for now...")
-    assign(simGrid.delta3$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
-    next
-  }
 
   # Set the seed for every unique simulation
   set.seed(seed)
@@ -277,24 +259,6 @@ for (scenario in 1:nrow(simGrid.delta5)) {
     ifelse(sharp, "sharp n",
            "conservative n")
   )
-  
-  if ((simGrid.delta5$sigma.r0.LB[scenario] >
-       simGrid.delta5$sigma.r0.UB[scenario]) |
-      (simGrid.delta5$sigma.r1.LB[scenario] >
-       simGrid.delta5$sigma.r1.UB[scenario])) {
-    designText <- paste0("Design 2\n",
-                         postID,
-                         "delta = 0.5\n",
-                         "true corstr = exchangeable(", corr[1], ")\n",
-                         "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3))
-    if (notify) slackr_bot(designText)
-    warnText <- paste("It is not possible to not violate the conditional",
-                      "variation working assumption in this scenario.",
-                      "Skipping for now...")
-    assign(simGrid.delta5$simName[scenario], warnText)
-    if (notify) slackr_bot(warnText)
-    next
-  }
   
   # Set the seed for every unique simulation
   set.seed(seed)
