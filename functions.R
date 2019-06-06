@@ -897,16 +897,6 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
   
   sigma <- reshapeSigma(sigma, times, design)
   
-  # if (sum(rownames(sigma) == times) == length(times) & ncol(sigma) != nDTR) {
-  #   sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
-  # } else if (sum(grepl("dtr", rownames(sigma))) != 0) {
-  #   sigma <- t(matrix(rep(sigma, length(times)), ncol = length(times)))
-  # } else if (nrow(sigma) == ncol(sigma) & ncol(sigma) == 1) {
-  #   sigma <- matrix(rep(sigma, nDTR * length(times)), ncol = nDTR)
-  # } else if (nrow(sigma) == length(times) & ncol(sigma) == 1) {
-  #   sigma <- matrix(rep(sigma, nDTR), ncol = nDTR)
-  # }
-  
   colnames(sigma) <- paste0("dtr", 1:nDTR)
   rownames(sigma) <- paste0("time", times)
   
