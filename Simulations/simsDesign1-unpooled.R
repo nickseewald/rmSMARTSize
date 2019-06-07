@@ -19,6 +19,7 @@
 ### -------------------------------------- ###
 ###        Simulations for Design 1        ###
 ### No (intentional) assumption violations ###
+###  Estimating Unstructured Correlation   ###
 ### -------------------------------------- ###
 
 library(here)
@@ -147,26 +148,6 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   # Set the seed for every unique simulation
   set.seed(seed)
   
-  ## Construct string describing simulation parameters
-  designText <- paste0("Design ", design, "\n",
-                       ifelse(is.null(postIdentifier), "", postIdentifier),
-                       "\ndelta = ", delta, "\n",
-                       "true corstr = ", corstr, "(", rho, ")\n",
-                       "sized for exchangeable(", rho.size, ")\n",
-                       "r0 = ", round(r0, 3), ", r1 = ", round(r1, 3),
-                       "\nn = ", n, "\n",
-                       niter, " iterations.")
-  
-  ## Print message in console describing the simulation that's currently running
-  message(
-    paste0("********************\n",
-           "Starting simulation!\n",
-           designText,
-           "\n********************\n")
-  )
-  if (notify)
-    slackr_bot(designText)
-  
   # Simulate
   if (notify) slackr_bot(simGrid.delta3$simName[scenario])
   assign(simGrid.delta3$simName[scenario],
@@ -208,7 +189,7 @@ for (scenario in 1:nrow(simGrid.delta3)) {
   save(file = here("Results", "simsDesign1-delta3-basic-unstrEst.RData"),
        list = c(grep("d1_delta3", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
-                "simGrid.delta3"),
+                "simGrid.delta3", "invalidSims.delta3"),
        precheck = TRUE)
 }
 
@@ -333,7 +314,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
   save(file = here("Results", "simsDesign1-delta5-basic-unstrEst.RData"),
        list = c(grep("d1_delta5", ls(), value = T), "sigma",
                 "gammas", "lambdas", "seed", "times", "spltime",
-                "simGrid.delta5"),
+                "simGrid.delta5", "invalidSims.delta5"),
        precheck = TRUE)
 }
 

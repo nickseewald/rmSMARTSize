@@ -198,7 +198,7 @@ simulateSMART <- function(n = NULL,
     foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
             .export = ls(envir = .GlobalEnv),
             .packages = c("MASS", "xtable", "slackr"),
-            .verbose = TRUE, .errorhandling = "remove", .multicombine = FALSE,
+            .verbose = FALSE, .errorhandling = "remove", .multicombine = FALSE,
             .inorder = FALSE) %dorng% {
     # for (i in 1:niter) {
               
