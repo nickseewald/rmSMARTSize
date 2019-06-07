@@ -423,8 +423,8 @@ simulateSMART <- function(n = NULL,
                 if (save.data) {
                   result[["data"]] <- list(d$data)
                 }
-                # return(result)
-                results[[i]] <- result
+                return(result)
+                # results[[i]] <- result
               }
             }
   
