@@ -64,7 +64,13 @@ combine.results <- function(list1, list2) {
     },
     list(list1$param.var, list2$param.var))
   
-  rho.hat    <- c(list1$rho.hat, list2$rho.hat)
+  rho.hat    <-
+    Reduce(function(x, y) {
+      x[is.na(x)] <- 0
+      y[is.na(y)] <- 0
+      x + y
+    },
+    list(list1$rho.hat, list2$rho.hat))
   
   coverage   <- list1$coverage + list2$coverage
   
@@ -885,7 +891,6 @@ estimate.respCor <- function(d, design, times, spltime, gammas, causal = F) {
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
                          corstr = c("exchangeable", "ar1", "unstructured"),
                          pool.dtr = T) {
-  ## FIXME: Allow for different rhos across DTRs
   
   corstr <- match.arg(corstr)
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
@@ -972,13 +977,19 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
     m <- combn(times, 2)
     r <- 
       lapply(
+        # look at each person's data individually
         split.data.frame(resids, resids$id),
         function(subdat) {
+          # for each person's data, consider every combination of timepoints
           x <- do.call(rbind, lapply(1:ncol(m), function(tpair) {
+            # per combination of timepoints (i.e., row), cycle over DTRs ()
             # data.frame("tpair" = paste(m[, tpair], collapse = ""),
             sapply(1:sum(grepl("dtr", names(subdat))), function(dtr) {
+              # compute product of appropriate residuals, then divide by 
+              # product of appropriate sigmas, then multiply by weight
               prod(subdat[subdat$time %in% m[, tpair], paste0("dtr", dtr)]) /
-                prod(sigma[rownames(sigma) %in% m[, tpair], paste0("dtr", dtr)])
+                prod(sigma[rownames(sigma) %in% paste0("time",m[, tpair]),
+                                paste0("dtr", dtr)])
             }) * weights$weight[weights$id == unique(subdat$id)]
           }))
           rownames(x) <-
@@ -1088,7 +1099,7 @@ finalize.results <- function(x) {
   sigma2.hat           <- x$sigma2.hat / x$valid
   param.var            <- x$param.var / x$valid
   param.var.est        <- apply(as.matrix(x$param.hat), 2, var, na.rm = T)
-  rho.hat              <- mean(x$rho.hat, na.rm = T)
+  rho.hat              <- x$rho.hat / x$valid
   coverage             <- as.numeric(x$coverage / x$valid)
   condVars             <- lapply(x$condVars, function(v) v / x$valid)
   respCor              <- x$respCor / x$valid
