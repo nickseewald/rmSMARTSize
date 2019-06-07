@@ -157,7 +157,8 @@ simulateSMART <- function(n = NULL,
   if (is.null(n)) {
     n <- sample.size(delta = delta, r = r, r1 = r1, r0 = r0,
                      rho = rho.size, alpha = alpha, power = power,
-                     design = design, rounding = rounding,
+                     design = design, corstr = corstr,
+                     rounding = rounding,
                      conservative = conservative)
   }
   
