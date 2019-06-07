@@ -106,6 +106,7 @@ simulateSMART <- function(n = NULL,
                           respDirection = c("high", "low"),
                           pool.time = TRUE,
                           pool.dtr = TRUE,
+                          corstr.estimate = corstr,
                           niter = 5000,
                           tol = 1e-8,
                           maxiter.solver = 1000,
@@ -192,12 +193,15 @@ simulateSMART <- function(n = NULL,
   if (notify)
     slackr_bot(designText)
   
-  results <-
+  
+  
+  results <- #list()
     foreach(i = 1:niter, .combine = combine.results, .final = finalize.results,
             .export = ls(envir = .GlobalEnv),
             .packages = c("MASS", "xtable", "slackr"),
             .verbose = FALSE, .errorhandling = "remove", .multicombine = FALSE,
             .inorder = FALSE) %dorng% {
+    # for (i in 1:niter) {
               
               d <- generateSMART(n, times, spltime, r1, r0, gammas, lambdas, 
                                  design = design, sigma, sigma.r1, sigma.r0,
@@ -308,7 +312,8 @@ simulateSMART <- function(n = NULL,
                 
                 rho.hat <-
                   estimate.rho(d1, times, spltime, design, sqrt(sigma2.hat),
-                               param.hat, corstr = "exchangeable")
+                               param.hat, corstr = corstr.estimate,
+                               pool.dtr = pool.dtr)
                 
                 # Compute variance matrices for all conditional cells
                 condVars <- lapply(split.SMART(d$data), function(x) {
@@ -318,7 +323,7 @@ simulateSMART <- function(n = NULL,
                 # Iterate parameter estimation
                 outcome.var <-
                   varmat(sigma2.hat, rho.hat, times, design, 
-                         corstr = "exchangeable")
+                         corstr = corstr.estimate)
                 
                 param.hat <-
                   estimate.params(d1,
@@ -346,10 +351,11 @@ simulateSMART <- function(n = NULL,
                                  design,
                                  sqrt(sigma2.hat),
                                  param.hat,
-                                 corstr = "exchangeable")
+                                 corstr = corstr.estimate,
+                                 pool.dtr = pool.dtr)
                   outcomeVar.new <-
                     varmat(sigma2.new, rho.new, times, design, 
-                           corstr = "exchangeable")
+                           corstr = corstr.estimate)
                   param.new <-
                     estimate.params(d1,
                                     outcomeVar.new,
@@ -362,7 +368,8 @@ simulateSMART <- function(n = NULL,
                   if (norm(param.new - param.hat, type = "F") <= tol &
                       norm(as.matrix(sigma2.new) - as.matrix(sigma2.hat), 
                            type = "F") <= tol &
-                      (rho.new - rho.hat) ^ 2 <= tol) {
+                      norm(as.matrix(rho.new) - as.matrix(rho.hat),
+                           type = "F") <= tol) {
                     param.hat <- param.new
                     sigma2.hat <- sigma2.new
                     rho.hat <- rho.new
@@ -372,13 +379,12 @@ simulateSMART <- function(n = NULL,
                     param.hat <- param.new
                     sigma2.hat <- sigma2.new
                     rho.hat <- rho.new
-                    iter <- j
                   }
                 }
                 param.var <-
                   estimate.paramvar(d1,
-                                    cormat(rho.hat, length(times), 
-                                           corstr = "exchangeable"),
+                                    varmat(sigma2.hat, rho.hat, times, design,
+                                           corstr.estimate),
                                     times,
                                     spltime,
                                     design,
@@ -419,6 +425,7 @@ simulateSMART <- function(n = NULL,
                   result[["data"]] <- list(d$data)
                 }
                 return(result)
+                # results[[i]] <- result
               }
             }
   
