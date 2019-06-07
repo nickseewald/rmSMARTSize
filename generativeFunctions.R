@@ -279,6 +279,7 @@ generateStage2.means <-
     } else if (corstr == "ar1") {
       # FIXME: This only works for time 2 right now! Any other time will not have 
       # proper correlation structure
+      warning("AR(1) data can only be reliably generated for three timepoints.")
       for (time in times[times > spltime]) {
         for (dtr in 1:nDTR) {
           d[, paste0("Y", time, ".", dtrTriples[dtr])] <- 
@@ -287,7 +288,7 @@ generateStage2.means <-
             matrix(rep(
               spltime *  (1 - rho * sigma[3, dtr]/sigma[2, dtr]) * 
                 (gammas[1] + gammas[2] + gammas[3] * dtrTxts[1, dtr]) + 
-                (time - spltime) * (gammas[4] + gammas[5] * dtrTxts[1, dtr]),
+                (time - spltime) * (gammas[4] + gammas[5] * dtrTxts[1, dtr]), 
               n
             ), nrow = n) +
             # Add appropriate causal Y1 (Y0 doesn't appear)
@@ -458,14 +459,14 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
     } else if (boundType == "assumption") {
       sqrt(max(c(
         0.1,
-        sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr1) - mean(Y2.dtr1))^2 -
+        sigma[3, dtrCol1]^2 + ((1 - r) / r) * (mean(Y2.NR.dtr1) - mean(Y2.dtr1))^2 -
           (1 - r) * (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2,
-        sigma^2 + ((1 - r) / r) * (mean(Y2.NR.dtr2) - mean(Y2.dtr2))^2 -
+        sigma[3, dtrCol2]^2 + ((1 - r) / r) * (mean(Y2.NR.dtr2) - mean(Y2.dtr2))^2 -
           (1 - r) * (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2
       )))
     }
   } else {
-    sqrt(sigma^2 / r - (1 - r) * 
+    sqrt(sigma[3, dtrCol1]^2 / r - (1 - r) * 
           max(c(
             (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2, 
             (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2)) - stage1var)
@@ -494,7 +495,8 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
 #'
 #' @examples
 computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
-                           corstr = c("identity", "exchangeable", "ar1"), design, balanceRand = F,
+                           corstr = c("identity", "exchangeable", "ar1"),
+                           design, balanceRand = F,
                            varCombine = mean,
                            empirical = F, seed = 6781) {
   
