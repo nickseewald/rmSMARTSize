@@ -100,6 +100,7 @@ simulateSMART <- function(n = NULL,
                           rho.r0 = rho,
                           rho.size = rho,
                           L = NULL,
+                          comparison.path = c("separate", "shared"),
                           varmats = NULL,
                           variances = NULL,
                           respFunction = response.oneT,
@@ -121,6 +122,7 @@ simulateSMART <- function(n = NULL,
   
   call <- match.call()
   respDirection <- match.arg(respDirection)
+  comparison.path <- match.arg(comparison.path)
   
   # if (!is.null(r) & (r < 0 | r > 1)) stop("r must be between 0 and 1.")
   if (is.null(r) & is.null(r1) & is.null(r0)) 
@@ -158,8 +160,8 @@ simulateSMART <- function(n = NULL,
   if (is.null(n)) {
     n <- sample.size(delta = delta, r = r, r1 = r1, r0 = r0,
                      rho = rho.size, alpha = alpha, power = power,
-                     design = design, corstr = corstr,
-                     rounding = rounding,
+                     design = design, corstr = corstr, sigma = sigma,
+                     rounding = rounding, path = comparison.path,
                      conservative = conservative)
   }
   
