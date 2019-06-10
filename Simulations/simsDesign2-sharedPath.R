@@ -42,7 +42,8 @@ sigma <- 8
 simGrid <- expand.grid(
   list(
     sharp = c(TRUE,FALSE),
-    r = c(.4, .6),
+    r0 = c(.4, .6),
+    r1 = c(.4, .6),
     corr = c(0, .3, .6, .8),
     oldModel = FALSE,
     respFunction = list(
@@ -61,6 +62,7 @@ simGrid <- subset(simGrid, !(respFunction == "response.oneT" & r0 != r1))
 simGrid <- subset(simGrid, !(corr == 0 & sharp == T))
 simGrid <- subset(simGrid, !(oldModel & respFunction != "response.indep") |
                     respFunction == "response.indep")
+simGrid <- subset(simGrid, r0 == r1)
 rownames(simGrid) <- 1:nrow(simGrid)
 
 # Send initial notification that simulations are about to start
@@ -106,7 +108,7 @@ save(file = here("Results", "simsDesign2-delta3-sharedPath.RData"),
 
 for (scenario in 1:nrow(simGrid.delta3)) {
   # Extract simulation conditions from simGrid.delta3
-  r <- simGrid.delta3$r[scenario]
+  r <- simGrid.delta3$r0[scenario]
   sharp <- simGrid.delta3$sharp[scenario]
   corr <- c(simGrid.delta3$corr[scenario], simGrid.delta3$corr.r1[scenario],
             simGrid.delta3$corr.r0[scenario])
@@ -231,7 +233,7 @@ save(file = here("Results", "simsDesign2-delta5-sharedPath.RData"),
 
 for (scenario in 1:nrow(simGrid.delta5)) {
   # Extract simulation conditions from simGrid.delta5
-  r <- simGrid.delta5$r[scenario]
+  r <- simGrid.delta5$r0[scenario]
   sharp <- simGrid.delta5$sharp[scenario]
   corr <- c(simGrid.delta5$corr[scenario], simGrid.delta5$corr.r1[scenario],
             simGrid.delta5$corr.r0[scenario])
@@ -272,8 +274,7 @@ for (scenario in 1:nrow(simGrid.delta5)) {
            simulateSMART(
              gammas = gammas,
              lambdas = lambdas,
-             r1 = r1,
-             r0 = r0,
+             r = r,
              times = times,
              spltime = spltime,
              alpha = .05,
