@@ -97,8 +97,6 @@ simGrid.delta3$simName <- sapply(1:nrow(simGrid.delta3), function(i) {
          ifelse(x$sharp, ".sharp", ""))
 })
 
-simGrid.delta3 <- simGrid.delta3[!duplicated(simGrid.delta3), ]
-
 save(file = here("Results", "simsDesign2-delta3-rho.RData"),
      list = c("sigma", "simGrid.delta3",
               "gammas", "lambdas", "seed", "times", "spltime"))
