@@ -1724,14 +1724,17 @@ varmat <-
            rho,
            times,
            design,
-           corstr = c("identity", "exchangeable", "ar1", "unstructured")) {
+           corstr = c("identity", "exchangeable", "ar1", "unstructured"),
+           pool.dtr = TRUE) {
     nDTR <- switch(design, 8, 4, 3)
     corstr <- match.arg(corstr)
     
-    rho <- as.matrix(rho)
-    ## FIXME: rho dimensions aren't quite right
-    
     sigma2 <- reshapeSigma(sigma2, times, design)
+    
+    rho <- as.matrix(rho)
+    if (length(rho) == 1)
+      rho <- as.matrix(rep(rho, nDTR))
+    ## FIXME: rho dimensions aren't quite right
     
     if (length(rho) == 1 & corstr == "unstructured") {
       warning(
@@ -1752,9 +1755,12 @@ varmat <-
         })
       }
     } else {
-      lapply(1:nDTR, function(dtr) {
+      Vlist <- lapply(1:nDTR, function(dtr) {
         diag(sqrt(sigma2[, dtr])) %*% 
           cormat(rho[dtr], length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
       })
+      if (pool.dtr) {
+        Reduce("+", Vlist) / nDTR
+      } else Vlist
     }
   }

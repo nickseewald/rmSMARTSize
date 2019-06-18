@@ -325,7 +325,7 @@ simulateSMART <- function(n = NULL,
                 # Iterate parameter estimation
                 outcome.var <-
                   varmat(sigma2.hat, rho.hat, times, design, 
-                         corstr = corstr.estimate)
+                         corstr = corstr.estimate, pool.dtr = pool.dtr)
                 
                 param.hat <-
                   estimate.params(d1,
