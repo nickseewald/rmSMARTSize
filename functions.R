@@ -1384,7 +1384,7 @@ response.beta <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
   shape0 <- r0 / (1 - r0)
   
   respDirection <- match.arg(respDirection)
-  tail <- switch(respDirection, "high" = F, "low" = T)
+  tail <- switch(respDirection, "high" = T, "low" = F)
   
   if (causal) {
     x1 <- pnorm(d$Y1.1, mean = gammas[1] + gammas[2] + gammas[3],
@@ -1728,6 +1728,9 @@ varmat <-
     nDTR <- switch(design, 8, 4, 3)
     corstr <- match.arg(corstr)
     
+    rho <- as.matrix(rho)
+    ## FIXME: rho dimensions aren't quite right
+    
     sigma2 <- reshapeSigma(sigma2, times, design)
     
     if (length(rho) == 1 & corstr == "unstructured") {
@@ -1744,14 +1747,14 @@ varmat <-
       } else {
         lapply(1:nDTR, function(dtr) {
           diag(sqrt(sigma2[, dtr])) %*%
-            cormat(rho[, dtr], length(times), corstr) %*% 
+            cormat(rho[dtr], length(times), corstr) %*% 
             diag(sqrt(sigma2[, dtr]))
         })
       }
     } else {
       lapply(1:nDTR, function(dtr) {
         diag(sqrt(sigma2[, dtr])) %*% 
-          cormat(rho, length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
+          cormat(rho[dtr], length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
       })
     }
   }
