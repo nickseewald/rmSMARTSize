@@ -1727,13 +1727,11 @@ varmat <-
            corstr = c("identity", "exchangeable", "ar1", "unstructured"),
            pool.dtr = TRUE) {
     nDTR <- switch(design, 8, 4, 3)
+    ncombn <- ncol(combn(times, 2))
     corstr <- match.arg(corstr)
     
     sigma2 <- reshapeSigma(sigma2, times, design)
     
-    rho <- as.matrix(rho)
-    if (length(rho) == 1)
-      rho <- as.matrix(rep(rho, nDTR))
     ## FIXME: rho dimensions aren't quite right
     
     if (length(rho) == 1 & corstr == "unstructured") {
@@ -1742,25 +1740,36 @@ varmat <-
           "rho is length 1 with unstructured corstr.",
           "Setting corstr to exchangeable."
         ))
-        corstr <- "exchangeable"
-    } else if (corstr == "unstructured") {
+      corstr <- "exchangeable"
+    }
+    
+    if (length(rho) == 1) {
+      rho <- matrix(rep(rho, nDTR * ncombn), nrow = ncombn)
+    } else if (length(rho) == nDTR) {
+      rho <- matrix(rep(rho, ncombn), nrow = ncombn)
+    } else if (length(rho) == ncombn) {
+      rho <- matrix(rep(rho, nDTR), nrow = ncombn)
+    }
+    
+    if (corstr == "unstructured") {
       if (!is.matrix(rho) | (is.matrix(rho) &
-                             !all.equal(dim(rho), c(length(times), nDTR)))) {
-        stop("rho is not of proper dimension: must be T by nDTR")
+                             !all.equal(dim(rho), c(ncombn, nDTR)))) {
+        stop("rho is not of proper dimension: must be Tchoose2 by nDTR")
       } else {
         lapply(1:nDTR, function(dtr) {
           diag(sqrt(sigma2[, dtr])) %*%
-            cormat(rho[dtr], length(times), corstr) %*% 
+            cormat(rho[, dtr], length(times), corstr) %*% 
             diag(sqrt(sigma2[, dtr]))
         })
       }
     } else {
       Vlist <- lapply(1:nDTR, function(dtr) {
         diag(sqrt(sigma2[, dtr])) %*% 
-          cormat(rho[dtr], length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
+          cormat(rho[, dtr], length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
       })
       if (pool.dtr) {
-        Reduce("+", Vlist) / nDTR
-      } else Vlist
+        Vlist <- Reduce("+", Vlist) / nDTR
+      }
+      return(Vlist)
     }
   }
