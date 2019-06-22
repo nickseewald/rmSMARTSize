@@ -1016,7 +1016,11 @@ estimate.rho <- function(d, times, spltime, design, sigma, gammas,
     if (pool.dtr)
       rhoHat <- mean(rhoHat)
   }
-  
+  if (!pool.dtr) {
+    attr(rhoHat, "nPerDTR") <- colSums(aggregate(x = d[, grep("dtr", names(d))], 
+                                                 by = list("id"=d$id),
+                                                 FUN = unique)[, 2:(nDTR + 1)])
+  }
   return(rhoHat)
 }
 
@@ -1089,7 +1093,13 @@ estimate.sigma2 <-
     numerator <- as.matrix(numerator[,-1])
     denominator <- 1
   }
-  as.matrix(numerator / denominator)
+  sigma2.hat <- as.matrix(numerator / denominator)
+  if (!pool.dtr) {
+    attr(sigma2.hat, "nPerDTR") <-
+      colSums(aggregate(x = d[, grep("dtr", names(d))], 
+                        by = list("id"=d$id), FUN = unique)[, 2:(nDTR + 1)])
+    }
+  sigma2.hat
   }
 
 # Clean up output of combine.results, to be used in the foreach loop after
@@ -1724,7 +1734,7 @@ varmat <-
            rho,
            times,
            design,
-           corstr = c("identity", "exchangeable", "ar1", "unstructured"),
+           corstr = c("exchangeable", "identity", "ar1", "unstructured"),
            pool.dtr = TRUE) {
     nDTR <- switch(design, 8, 4, 3)
     ncombn <- ncol(combn(times, 2))
@@ -1743,13 +1753,25 @@ varmat <-
       corstr <- "exchangeable"
     }
     
-    if (length(rho) == 1) {
+    nPerDTR <- attr(rho, "nPerDTR")
+    
+    if (length(rho) == 1 & corstr %in% c("exchangeable", "ar1")) {
       rho <- matrix(rep(rho, nDTR * ncombn), nrow = ncombn)
-    } else if (length(rho) == nDTR) {
-      rho <- matrix(rep(rho, ncombn), nrow = ncombn)
-    } else if (length(rho) == ncombn) {
-      rho <- matrix(rep(rho, nDTR), nrow = ncombn)
+    } else if (length(rho) == nDTR & corstr %in% c("exchangeable", "ar1")) {
+      rho <- do.call(rbind, lapply(1:ncombn, function(i) rho))
+    } else if (length(rho) == ncombn & corstr %in% c("exchangeable", "ar1")) {
+      stop(paste("rho is not of proper dimension for", corstr,
+                 "correlation structure: must be scalar or a vector of length",
+                 nDTR))
     }
+    
+    # if (length(rho) == 1) {
+    #   rho <- matrix(rep(rho, nDTR * ncombn), nrow = ncombn)
+    # } else if (length(rho) == nDTR) {
+    #   rho <- matrix(rep(rho, ncombn), nrow = ncombn)
+    # } else if (length(rho) == ncombn) {
+    #   rho <- matrix(rep(rho, nDTR), nrow = ncombn)
+    # }
     
     if (corstr == "unstructured") {
       if (!is.matrix(rho) | (is.matrix(rho) &
@@ -1764,11 +1786,19 @@ varmat <-
       }
     } else {
       Vlist <- lapply(1:nDTR, function(dtr) {
+        # note that we're asking cormat() an unstructured correlation structure
+        # since we appropriately reshaped rho above -- correlations are 
+        # replicated etc. based on corstr argument to varmat().
         diag(sqrt(sigma2[, dtr])) %*% 
-          cormat(rho[, dtr], length(times), corstr) %*% diag(sqrt(sigma2[, dtr]))
+          cormat(rho[, dtr], length(times), "unstructured") %*% 
+          diag(sqrt(sigma2[, dtr]))
       })
       if (pool.dtr) {
-        Vlist <- Reduce("+", Vlist) / nDTR
+        if (!is.null(nPerDTR)) {
+          Vlist <- lapply(1:nDTR, function(i) Vlist[[i]] * nPerDTR[i])
+          Vlist <- Reduce("+", Vlist) / sum(nPerDTR)
+        } else 
+          Vlist <- Reduce("+", Vlist) / nDTR
       }
       return(Vlist)
     }
