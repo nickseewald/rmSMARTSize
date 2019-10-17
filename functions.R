@@ -200,7 +200,7 @@ conditional.model <- function(a1, r, a2R, a2NR, obsTime, spltime, design, rprob,
 }
 
 conditionalVarmat <- function(times, spltime, design, r1, r0,
-                              corstr = c("identity", "exchangeable", "ar1"),
+                              corstr = c("independence", "exchangeable", "ar1"),
                               sigma, sigma.r1, sigma.r0,
                               uneqsd = NULL, uneqsdDTR = NULL,
                               rho, rho.r1, rho.r0,
@@ -679,9 +679,9 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
 cormat <-
   function(rho,
            t,
-           corstr = c("identity", "exchangeable", "ar1", "unstructured")) {
+           corstr = c("independence", "exchangeable", "ar1", "unstructured")) {
     corstr <- match.arg(corstr)
-    if (corstr == "identity") {
+    if (corstr == "independence") {
       diag(rep(1, t))
     } else if (corstr == "exchangeable") {
       m <- matrix(rep(rho, t ^ 2), nrow = t)
@@ -889,10 +889,13 @@ estimate.respCor <- function(d, design, times, spltime, gammas, causal = F) {
 }
 
 estimate.rho <- function(d, times, spltime, design, sigma, gammas,
-                         corstr = c("exchangeable", "ar1", "unstructured"),
+                         corstr = c("independence", "exchangeable", "ar1",
+                                    "unstructured"),
                          pool.dtr = T) {
   
   corstr <- match.arg(corstr)
+  if (corstr == "independence") 
+    return(0)
   if (any(is(d$Y) == "NULL")) stop("d has to be in long format.")
   
   n <- length(unique(d$id))
@@ -1547,7 +1550,7 @@ response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
 #' @param data A `data.frame` with the appropriate structure 
 #' (see `generateSMART`)
 #' @param corstr A string indicating the type of working correlation structure.
-#'  One of `"identity"`/`"id"`, `"exchangeable"`/`"exch"`. 
+#'  One of `"independence"`/`"id"`, `"exchangeable"`/`"exch"`. 
 #' @param times A vector of times at which the repeated-measures outcome has 
 #' been collected
 #' @param spltime The time point (in `times`) immediately after which 
@@ -1569,7 +1572,7 @@ response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
 #' @examples
 SMART.estimate <-
   function(data,
-           corstr = c("identity", "exchangeable", "ar1"),
+           corstr = c("independence", "exchangeable", "ar1"),
            times,
            spltime,
            design,
@@ -1624,7 +1627,7 @@ SMART.estimate <-
     })
     
     # Iterate parameter estimation
-    if (corstr == "identity" |
+    if (corstr == "independence" |
         (corstr == "exchangeable" & rho == 0)) {
       outcome.var <- varmat(sigma2.hat, 0, times, design, "exch")
       param.var <-
@@ -1734,13 +1737,18 @@ varmat <-
            rho,
            times,
            design,
-           corstr = c("exchangeable", "identity", "ar1", "unstructured"),
+           corstr = c("exchangeable", "independence", "ar1", "unstructured"),
            pool.dtr = TRUE) {
     nDTR <- switch(design, 8, 4, 3)
     ncombn <- ncol(combn(times, 2))
     corstr <- match.arg(corstr)
     
     sigma2 <- reshapeSigma(sigma2, times, design)
+    
+    if (corstr == "independence"){
+      rho <- 0
+      corstr <- "exchangeable"
+    }
     
     ## FIXME: rho dimensions aren't quite right
     

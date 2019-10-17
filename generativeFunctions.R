@@ -25,7 +25,7 @@ generateStage1 <- function(n,
                            gammas,
                            design,
                            sigma,
-                           corstr = c("identity", "exchangeable", "ar1"),
+                           corstr = c("independence", "exchangeable", "ar1"),
                            rho = 0,
                            respFunction,
                            respDirection = NULL,
@@ -65,7 +65,7 @@ generateStage1 <- function(n,
   ## Generate stage 1 potential outcomes
   stage1times <- times[times > times[1] & times <= spltime]
   
-  if (corstr %in% c("exchangeable", "identity")) {
+  if (corstr %in% c("exchangeable", "independence")) {
     # FIXME: This only works for time 1 right now! Any other time will not have 
     # proper correlation structure
     rhoCoef <- sapply(1:length(stage1times), function(j) rho / (1 + (j-1)*rho))
@@ -168,7 +168,7 @@ generateStage2.means <-
            gammas,
            lambdas,
            design,
-           corstr = c("identity", "exchangeable", "ar1")) {
+           corstr = c("independence", "exchangeable", "ar1")) {
     
     if (!("generateStage1") %in% class(stage1))
       stop("'stage1' must be generated from 'generateStage1'")
@@ -254,7 +254,7 @@ generateStage2.means <-
     } else
       stop("'design' must be one of 1, 2, or 3.")
     
-    if (corstr %in% c("identity", "exchangeable")) {
+    if (corstr %in% c("independence", "exchangeable")) {
       # FIXME: This only works for time 2 right now! Any other time will not have 
       # proper correlation structure
       d[, paste0("Y", times[times > spltime], ".", dtrTriples)] <- 
@@ -373,7 +373,7 @@ testVarianceInput <- function(x, a, d, r0, r1, rho, resp = c("nr", "r")) {
 #'
 #' @examples
 computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
-                            corstr = c("identity", "exchangeable", "ar1"),
+                            corstr = c("independence", "exchangeable", "ar1"),
                             bound = c("lower", "upper"),
                             boundType = c("feasibility", "assumption")) {
  
@@ -381,7 +381,7 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
   boundType <- match.arg(boundType)
   corstr    <- match.arg(corstr)
   
-  if (corstr == "identity")
+  if (corstr == "independence")
     corstr <- "exchangeable"
   
   sigma <- reshapeSigma(sigma, times, design)
@@ -428,7 +428,7 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
   dtrCol1 <- match(dtr1, dtrs)
   dtrCol2 <- match(dtr2, dtrs)
   
-  if (corstr %in% c("identity", "exchangeable")) {
+  if (corstr %in% c("independence", "exchangeable")) {
     c0 <- rho * sigma[2, dtrCol1] * sigma[3, dtrCol1] / 
       (sigma[1, dtrCol1] * (rho * sigma[1, dtrCol1] + sigma[2, dtrCol1]))
     c1 <- rho * sigma[3, dtrCol1] / 
@@ -496,7 +496,7 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
 #'
 #' @examples
 computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
-                           corstr = c("identity", "exchangeable", "ar1"),
+                           corstr = c("independence", "exchangeable", "ar1"),
                            design, balanceRand = F,
                            varCombine = mean,
                            empirical = F, seed = 6781) {
@@ -642,7 +642,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
       
       # Create multipliers for Y0 and Y1 (these depend on corstr)
       # FIXME: ONLY ALLOWS CONSTANT SIGMA RIGHT NOW
-      if (corstr %in% c("identity", "exchangeable")) {
+      if (corstr %in% c("independence", "exchangeable")) {
         c0 <- rho * sigma * sigma / 
           (sigma * (rho * sigma + sigma))
         c1 <- rho * sigma / 
@@ -664,7 +664,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
       
       # Create multipliers for Y0 and Y1 (these depend on corstr)
       # FIXME: ONLY ALLOWS CONSTANT SIGMA RIGHT NOW
-      if (corstr %in% c("identity", "exchangeable")) {
+      if (corstr %in% c("independence", "exchangeable")) {
         c0 <- rho * sigma * sigma / 
           (sigma * (rho * sigma + sigma))
         c1 <- rho * sigma / 

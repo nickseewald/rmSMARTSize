@@ -35,7 +35,7 @@
 #' @param sigma 
 #' @param sigma.r1 
 #' @param sigma.r0 
-#' @param corstr true correlation structure. one of "identity", "exchangeable",
+#' @param corstr true correlation structure. one of "independence", "exchangeable",
 #'  or "ar1".
 #' @param uneqsdDTR 
 #' @param uneqsd
@@ -57,7 +57,7 @@
 generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                           balanceRand = FALSE,
                           sigma, sigma.r1, sigma.r0, 
-                          corstr = c("identity", "exchangeable", "ar1"),
+                          corstr = c("independence", "exchangeable", "ar1"),
                           rho = NULL, rho.r1 = rho, rho.r0 = rho,
                           uneqsdDTR = NULL, uneqsd = NULL,
                           varmats = NULL, variances = NULL,
@@ -76,7 +76,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
   
   ## Handle correlation structure
   corstr <- match.arg(corstr)
-  if (corstr == "identity") {
+  if (corstr == "independence") {
     rho <- rho.r1 <- rho.r0 <- 0
   }
   
