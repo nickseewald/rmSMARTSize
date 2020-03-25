@@ -17,6 +17,34 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with rmSMARTsize.  If not, see <https://www.gnu.org/licenses/>.
 
+#' Data Generation for Stage 1 of a Longitudinal SMART
+#'
+#' @param n Sample size; total number of participants in the trial
+#' @param times Vector of timepoints for the entire study
+#' @param spltime numeric; the last timepoint in stage 1 (immediately prior to
+#' second randomization). Must be an element of `times`
+#' @param r1 Probability of response to first-stage treatment denoted A_1 = 1
+#' @param r0 Probability of response to first-stage treatment denoted A_1 = -1
+#' @param gammas Vector of marginal regression parameters
+#' @param design One of 1, 2, or 3, indicating SMART design type (1 = all 
+#' participants re-randomized, 2 = only non-responders re-randomized,
+#' 3 = only non-responders to A_1 = -1 are re-randomized)
+#' @param allocTx1 Probability of allocation to A_1 = 1 in the first stage. Defaults
+#' to 0.5, representing equal allocation to the two groups.
+#' @param sigma
+#' @param corstr 
+#' @param rho 
+#' @param respFunction 
+#' @param respDirection 
+#' @param perfectAlloc Logical; controls whether (TRUE) or not (FALSE) allocation
+#' to first-stage treatment should exactly achieve the rate specified in allocTx1. 
+#' @param empirical 
+#' @param old 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 generateStage1 <- function(n,
                            times,
                            spltime,
@@ -24,28 +52,35 @@ generateStage1 <- function(n,
                            r0,
                            gammas,
                            design,
+                           allocTx1 = 0.5,
                            sigma,
                            corstr = c("independence", "exchangeable", "ar1"),
                            rho = 0,
                            respFunction,
                            respDirection = NULL,
-                           balanceRand = FALSE,
+                           perfectAlloc = FALSE,
                            empirical = FALSE,
                            old = FALSE) {
   
+  ## Validate arguments
   if (old) 
     warning("Option 'old' currently does nothing in generateStage1()")
   if (is.null(n))
     stop("There's a problem with n being generated")
   
-  corstr <- match.arg(corstr)
+  if (!(design %in% 1:3))
+    stop("'design' must be 1, 2, or 3.")
   
+  if (allocTx1 > 1 | allocTx1 < 0)
+    stop("Invalid allocation proability: 'allocTx1' must be between 0 and 1.")
+  
+  sigma <- reshapeSigma(sigma, times, design)
+  
+  corstr <- match.arg(corstr)
   if (corstr == "exchangeable") {
     if (length(sigma) != 1) 
       stop("Currently the exchangeable structure can only handle a common sigma")
   }
-  sigma <- reshapeSigma(sigma, times, design)
-  
   
   ## Initialize data frame
   d <- data.frame("id" = 1:n)
@@ -54,28 +89,30 @@ generateStage1 <- function(n,
   d[[paste0("Y", times[1])]] <- gammas[1] + rnorm(n, 0, sigma)
   
   ## Generate observed treatment assignment
-  if (balanceRand) {
-    s <- sample(1:n, size = floor(n/2), replace = FALSE)
-    d$A1[s]  <- 1
-    d$A1[-s] <- -1
-  } else {
-    d$A1 <- 2 * rbinom(n, 1, 0.5) - 1
-  }
   
   ## Generate stage 1 potential outcomes
   stage1times <- times[times > times[1] & times <= spltime]
   
   if (corstr %in% c("exchangeable", "independence")) {
-    # FIXME: This only works for time 1 right now! Any other time will not have 
-    # proper correlation structure
-    rhoCoef <- sapply(1:length(stage1times), function(j) rho / (1 + (j-1)*rho))
+    pastYCoefs <-
+      sapply(1:length(stage1times), function(j)
+        rho / (1 + (j - 1) * rho))
+    
+    interceptModCoef <-
+      sapply(1:length(stage1times), function(j)
+        (1 - rho) / (1 + (j - 1) * rho))
     
     # Loop over timepoints in the first stage *after* treatment assignment
     for (tp in stage1times) {
       # For each timepoint, get all timepoints prior
       # (note that baseline gets left out for now -- dif. naming convention)
       previousTimes <- stage1times[stage1times < tp]
+      
       # Get the names of the Y's corresponding to those previous times
+      # Below, we construct regular expressions to search for variables named
+      # according to the convention Y(time).(stage1treatment), e.g., Y2.1 is 
+      # the Y variable at time 2 under A1 = 1. The regex includes baseline
+      # and all times prior to tp
       if (length(previousTimes) != 0) {
         previousYstring.0 <- 
           paste0("Y(", times[1], "|(",
@@ -92,24 +129,22 @@ generateStage1 <- function(n,
       # j is the index of the timepoint
       j <- which(tp == stage1times)
       
-      errorVar <- sigma^2 - (rho * sigma / (1 + (j-1)*rho))^2 *
-        (j + 2 * rho * choose(j, 2))
+      stage1ModCoef <- tp - (rho / (1 + (j - 1) * rho)) * sum(previousTimes)
+      
+      errorVar <- sigma^2 * (1 - (j * rho^2) / (1 + (j - 1) * rho))
       
       # Assign Y values 
       # FIXME: NEED VARIANCES!!!
-      d[[paste0("Y", tp, ".0")]] <-
-        rhoCoef[j] *  rowSums(as.matrix(d[, grep(previousYstring.0, names(d))],
-                                        nrow = n)) + 
-        (1-(j*rho)/(1+(j-1)*rho)) * gammas[1] +
-        (spltime - rho*(sum(previousTimes))/(1 + (j-1)*rho)) *
-        (gammas[2] + gammas[3] * (-1)) +
+      d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j] *
+        rowSums(as.matrix(d[, grep(previousYstring.0, names(d))], nrow = n)) +
+        interceptModCoef * gammas[1] + 
+        stage1ModCoef * (gammas[2] + gammas[3] * (-1)) +
         rnorm(n, 0, sqrt(errorVar))
       
-      d[[paste0("Y", tp, ".1")]] <-
-        rhoCoef[j] *  rowSums(as.matrix(d[, grep(previousYstring.1, names(d))],
-                                        nrow = n)) + 
-        (1-(j*rho)/(1+(j-1)*rho)) * gammas[1] +
-        (spltime - rho*(sum(previousTimes))/(1 + (j-1)*rho)) *
+      d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j] *
+        rowSums(as.matrix(d[, grep(previousYstring.1, names(d))], nrow = n)) +
+        interceptModCoef * gammas[1] +
+        stage1ModCoef *
         (gammas[2] + gammas[3] * (1)) +
         rnorm(n, 0, sqrt(errorVar))
     }
@@ -134,10 +169,12 @@ generateStage1 <- function(n,
     warning("Y1 not created")
   }
   
-  sigmaRespFunc <- sigma[which(times == spltime), 
-                         sapply(unique(substr(dtrNames(design),1,1)), 
-                                function(x) 
-                                  min(which(x == substr(dtrNames(design), 1, 1))))]
+  sigmaRespFunc <- sigma[which(times == spltime),
+                         sapply(unique(substr(dtrNames(design), 1, 1)),
+                                function(x)
+                                  min(which(x == substr(dtrNames(design), 1, 1)))
+                                )
+                         ]
   
   ## Generate response status
   resp <- respFunction(d, gammas, r1, r0, respDirection, sigmaRespFunc,
@@ -146,19 +183,46 @@ generateStage1 <- function(n,
   r1 <- resp$r1
   r0 <- resp$r0
   
-  ## Select potential Y1 value to observe based on randomization
-  d$Y1 <- NA
-  d$Y1[d$A1 == 1]  <- d$Y1.1[d$A1 == 1]
-  d$Y1[d$A1 == -1] <- d$Y1.0[d$A1 == -1]
+  ## "Observe" data by randomizing first-stage Tx and selecting appropriate
+  ## potential outcomes
+  
+  dObs <- data.frame("id" = d$id)
+  dObs[[paste0("Y", times[1])]] <- d[[paste0("Y", times[1])]]
+  
+  if (perfectAlloc) {
+    s <- sample(1:n, size = floor(n * allocTx1), replace = FALSE)
+    dObs$A1[s]  <- 1
+    dObs$A1[-s] <- -1
+  } else {
+    dObs$A1 <- 2 * rbinom(n, 1, 0.5) -1 
+  }
+  
+  for (tp in stage1times) {
+    # Inititalize the new Y variable in dObs by giving everyone their potential
+    # outcome under A1 = 1
+    dObs[[paste0("Y", tp)]] <- d[[paste0("Y", tp, ".1")]]
+    
+    # Give potential outcome under A1 = -1 for rows randomized as such
+    dObs[[paste0("Y", tp)]][dObs$A1 == -1] <- 
+      d[[paste0("Y", tp, ".0")]][dObs$A1 == -1]
+  }
   
   ## Select potential R value to observe based on randomization
-  d$R <- NA
-  d$R[d$A1 == 1]  <- d$R.1[d$A1 == 1]
-  d$R[d$A1 == -1] <- d$R.0[d$A1 == -1]
+  dObs$R <- d$R.1
+  dObs$R[d$A1 == -1] <- d$R.0[d$A1 == -1]
   
-  output <- list("data" = d, "r0" = r0, "r1" = r1, "rho" = rho, "sigma" = sigma)
+  output <-
+    list(
+      "data" = dObs,
+      "potentialData" = d,
+      "r0" = r0,
+      "r1" = r1,
+      "rho" = rho,
+      "sigma" = sigma
+    )
+  
   class(output) <- c("generateStage1", class(output))
-  output
+  return(output)
 }
 
 generateStage2.means <-
@@ -176,7 +240,7 @@ generateStage2.means <-
     corstr <- match.arg(corstr)
     
     # Extract stage-1 data and parameters
-    d     <- stage1$data
+    d     <- stage1$obsData
     r1    <- stage1$r1
     r0    <- stage1$r0
     rho   <- stage1$rho
