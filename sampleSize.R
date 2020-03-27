@@ -79,10 +79,10 @@ sample.size <- function(delta, r = NULL, r1 = r, r0 = r, rho,
   } else if (design == 2) {
     if (path == "shared") {
         if (conservative) {
-          designEffect <- 2 / (1 - r)
+          designEffect <- .5 / (1 - r)
         } else {
           designEffect <- 1
-          correction <- (1 - r) * (1 + rho - 2*rho^2) / (1 + rho) - r / (2 * sigma^2)
+          correction <- 2 * (1 - r) * (1 + rho - 2*rho^2) / (1 + rho)
         }
     } else {
       designEffect <- ((2 - r1) + (2 - r0)) / 2

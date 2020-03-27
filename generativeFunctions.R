@@ -22,24 +22,27 @@
 #' @param n Sample size; total number of participants in the trial
 #' @param times Vector of timepoints for the entire study
 #' @param spltime numeric; the last timepoint in stage 1 (immediately prior to
-#' second randomization). Must be an element of `times`
+#'   second randomization). Must be an element of `times`
 #' @param r1 Probability of response to first-stage treatment denoted A_1 = 1
 #' @param r0 Probability of response to first-stage treatment denoted A_1 = -1
 #' @param gammas Vector of marginal regression parameters
-#' @param design One of 1, 2, or 3, indicating SMART design type (1 = all 
-#' participants re-randomized, 2 = only non-responders re-randomized,
-#' 3 = only non-responders to A_1 = -1 are re-randomized)
-#' @param allocTx1 Probability of allocation to A_1 = 1 in the first stage. Defaults
-#' to 0.5, representing equal allocation to the two groups.
+#' @param design One of 1, 2, or 3, indicating SMART design type (1 = all
+#'   participants re-randomized, 2 = only non-responders re-randomized, 3 = only
+#'   non-responders to A_1 = -1 are re-randomized)
+#' @param allocTx1 Probability of allocation to A_1 = 1 in the first stage.
+#'   Defaults to 0.5, representing equal allocation to the two groups.
 #' @param sigma
-#' @param corstr 
-#' @param rho 
-#' @param respFunction 
-#' @param respDirection 
-#' @param perfectAlloc Logical; controls whether (TRUE) or not (FALSE) allocation
-#' to first-stage treatment should exactly achieve the rate specified in allocTx1. 
-#' @param empirical 
-#' @param old 
+#' @param corstr
+#' @param rho
+#' @param respFunction
+#' @param respDirection
+#' @param sigmaFactor.1 A multiplier to control the variance of potential
+#'   outcomes to A1==1 to acheieve var(Y) = sigma in the observed data.
+#' @param perfectAlloc Logical; controls whether (TRUE) or not (FALSE)
+#'   allocation to first-stage treatment should exactly achieve the rate
+#'   specified in allocTx1.
+#' @param empirical
+#' @param old
 #'
 #' @return
 #' @export
@@ -58,6 +61,7 @@ generateStage1 <- function(n,
                            rho = 0,
                            respFunction,
                            respDirection = NULL,
+                           sigmaFactor.1 = 0.9,
                            perfectAlloc = FALSE,
                            empirical = FALSE,
                            old = FALSE) {
@@ -74,13 +78,13 @@ generateStage1 <- function(n,
   if (allocTx1 > 1 | allocTx1 < 0)
     stop("Invalid allocation proability: 'allocTx1' must be between 0 and 1.")
   
-  sigma <- reshapeSigma(sigma, times, design)
-  
   corstr <- match.arg(corstr)
   if (corstr == "exchangeable") {
     if (length(sigma) != 1) 
       stop("Currently the exchangeable structure can only handle a common sigma")
   }
+  
+  sigma <- reshapeSigma(sigma, times, design)
   
   ## Initialize data frame
   d <- data.frame("id" = 1:n)
@@ -123,6 +127,7 @@ generateStage1 <- function(n,
                  paste(previousTimes, collapse = "\\.1|"),
                  "\\.1))")
       } else {
+        # if only baseline exists prior to the current timepoint, use only that
         previousYstring.0 <- previousYstring.1 <- paste0("Y", times[1])
       }
       
@@ -131,22 +136,40 @@ generateStage1 <- function(n,
       
       stage1ModCoef <- tp - (rho / (1 + (j - 1) * rho)) * sum(previousTimes)
       
-      errorVar <- sigma^2 * (1 - (j * rho^2) / (1 + (j - 1) * rho))
+      # In order to achieve the correct variance on the **observed data** (which
+      # is what we want), the potential variances need to be adjusted slightly
+      # to account for the slight added noise by observing across two DTRs. Note
+      # that we observe Y = X*Y.1 + (1-X)*Y.0, where X is an indicator for
+      # whether or not A1 == 1. We will adjust the potential variance in Y.1
+      # down slightly from sigma, and increase the variance appropriately in Y.0
+      # to achieve var(Y) = sigma.
+      
+      # errorVar.1 is the added variance for potential outcomes for A1 == 1.
+      errorVar.1 <-
+        (sigmaFactor.1 * sigma^2) * (1 - ((j * rho^2) / (1 + (j - 1) * rho)))
+      
+      # errorVar.0 is the added variance for potential outcomes for A1 == -1,
+      # calibrated to errorVar.1 such that observed data will have variance
+      # sigma.
+      errorVar.0 <-
+        ((sigma ^ 2 - allocTx1 * (sigmaFactor.1 * sigma ^ 2) -
+           allocTx1 * (1 - allocTx1) * (2 * tp * gammas[3])^2) /
+        (1 - allocTx1)) * (1 - ((j * rho^2) / (1 + (j - 1) * rho)))
       
       # Assign Y values 
       # FIXME: NEED VARIANCES!!!
       d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j] *
         rowSums(as.matrix(d[, grep(previousYstring.0, names(d))], nrow = n)) +
-        interceptModCoef * gammas[1] + 
+        interceptModCoef[j] * gammas[1] + 
         stage1ModCoef * (gammas[2] + gammas[3] * (-1)) +
-        rnorm(n, 0, sqrt(errorVar))
+        rnorm(n, 0, sqrt(errorVar.0))
       
       d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j] *
         rowSums(as.matrix(d[, grep(previousYstring.1, names(d))], nrow = n)) +
-        interceptModCoef * gammas[1] +
+        interceptModCoef[j] * gammas[1] +
         stage1ModCoef *
         (gammas[2] + gammas[3] * (1)) +
-        rnorm(n, 0, sqrt(errorVar))
+        rnorm(n, 0, sqrt(errorVar.1))
     }
     
     # d[, paste0("Y", stage1times, ".0")] <-
