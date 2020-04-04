@@ -36,8 +36,6 @@
 #' @param rho
 #' @param respFunction
 #' @param respDirection
-#' @param sigmaFactor.1 A multiplier to control the variance of potential
-#'   outcomes to A1==1 to acheieve var(Y) = sigma in the observed data.
 #' @param perfectAlloc Logical; controls whether (TRUE) or not (FALSE)
 #'   allocation to first-stage treatment should exactly achieve the rate
 #'   specified in allocTx1.
@@ -61,7 +59,6 @@ generateStage1 <- function(n,
                            rho = 0,
                            respFunction,
                            respDirection = NULL,
-                           sigmaFactor.1 = 0.9,
                            perfectAlloc = FALSE,
                            empirical = FALSE,
                            old = FALSE) {
@@ -99,12 +96,12 @@ generateStage1 <- function(n,
   
   if (corstr %in% c("exchangeable", "independence")) {
     pastYCoefs <-
-      sapply(1:length(stage1times), function(j)
-        rho / (1 + (j - 1) * rho))
+      sapply(2:(length(stage1times) + 1), function(j)
+        rho / (1 + (j - 2) * rho))
     
-    interceptModCoef <-
-      sapply(1:length(stage1times), function(j)
-        (1 - rho) / (1 + (j - 1) * rho))
+    interceptMod <-
+     sapply(2:(length(stage1times) + 1), function(j)
+        (1 - rho) / (1 + (j - 2) * rho))
     
     # Loop over timepoints in the first stage *after* treatment assignment
     for (tp in stage1times) {
@@ -131,45 +128,32 @@ generateStage1 <- function(n,
         previousYstring.0 <- previousYstring.1 <- paste0("Y", times[1])
       }
       
-      # j is the index of the timepoint
-      j <- which(tp == stage1times)
+      # j is the index of the timepoint (overall)
+      j <- which(tp == times)
       
-      stage1ModCoef <- tp - (rho / (1 + (j - 1) * rho)) * sum(previousTimes)
-      
-      # In order to achieve the correct variance on the **observed data** (which
-      # is what we want), the potential variances need to be adjusted slightly
-      # to account for the slight added noise by observing across two DTRs. Note
-      # that we observe Y = X*Y.1 + (1-X)*Y.0, where X is an indicator for
-      # whether or not A1 == 1. We will adjust the potential variance in Y.1
-      # down slightly from sigma, and increase the variance appropriately in Y.0
-      # to achieve var(Y) = sigma.
-      
-      # errorVar.1 is the added variance for potential outcomes for A1 == 1.
-      errorVar.1 <-
-        (sigmaFactor.1 * sigma^2) * (1 - ((j * rho^2) / (1 + (j - 1) * rho)))
-      
-      # errorVar.0 is the added variance for potential outcomes for A1 == -1,
-      # calibrated to errorVar.1 such that observed data will have variance
-      # sigma.
-      errorVar.0 <-
-        ((sigma ^ 2 - allocTx1 * (sigmaFactor.1 * sigma ^ 2) -
-           allocTx1 * (1 - allocTx1) * (2 * tp * gammas[3])^2) /
-        (1 - allocTx1)) * (1 - ((j * rho^2) / (1 + (j - 1) * rho)))
+      # Need to account for the fact that the math is based on setting baseline
+      # as timepoint 1, but j is artificially inflated here (i.e., baseline is
+      # coded as 0 here)
+      stage1CoefMod <- tp - (rho / (1 + (j - 2) * rho)) * 
+        sum(c(times[1], previousTimes))
+
+      errorVar <- sigma^2 * (1 - ((j - 1) * rho^2 * (1 + (j - 2) * rho)) /
+                               (1 + (j - 1) * rho)^2)
       
       # Assign Y values 
       # FIXME: NEED VARIANCES!!!
-      d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j] *
+      d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j - 1] *
         rowSums(as.matrix(d[, grep(previousYstring.0, names(d))], nrow = n)) +
-        interceptModCoef[j] * gammas[1] + 
-        stage1ModCoef * (gammas[2] + gammas[3] * (-1)) +
-        rnorm(n, 0, sqrt(errorVar.0))
+        interceptMod[j - 1] * gammas[1] + 
+        stage1CoefMod * (gammas[2] + gammas[3] * (-1)) +
+        rnorm(n, 0, sqrt(errorVar))
       
-      d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j] *
+      d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j - 1] *
         rowSums(as.matrix(d[, grep(previousYstring.1, names(d))], nrow = n)) +
-        interceptModCoef[j] * gammas[1] +
-        stage1ModCoef *
+        interceptMod[j - 1] * gammas[1] +
+        stage1CoefMod *
         (gammas[2] + gammas[3] * (1)) +
-        rnorm(n, 0, sqrt(errorVar.1))
+        rnorm(n, 0, sqrt(errorVar))
     }
     
     # d[, paste0("Y", stage1times, ".0")] <-
@@ -650,7 +634,8 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # Generate a big data frame to estimate some of these things
     s1 <- generateStage1(2e5, times, spltime, r1, r0, gammas, design, sigma,
                          corstr, rho = rho, respFunction = respFunction,
-                         respDirection = respDir, balanceRand = F,
+                         respDirection = respDir, perfectAlloc = F,
+                         allocTx1 = 0.5,
                          empirical = F)
     
     s <- generateStage2.means(s1, times, spltime, gammas, lambdas, 
