@@ -87,7 +87,8 @@ generateStage1 <- function(n,
   d <- data.frame("id" = 1:n)
   
   ## Generate baseline outcome
-  d[[paste0("Y", times[1])]] <- gammas[1] + rnorm(n, 0, sigma)
+  d[[paste0("epsilon", times[1])]] <- rnorm(n, 0, sigma[1, 1])
+  d[[paste0("Y", times[1])]] <- gammas[1] + d[[paste0("epsilon", times[1])]]
   
   ## Generate observed treatment assignment
   
@@ -137,23 +138,25 @@ generateStage1 <- function(n,
       stage1CoefMod <- tp - (rho / (1 + (j - 2) * rho)) * 
         sum(c(times[1], previousTimes))
 
-      errorVar <- sigma^2 * (1 - ((j - 1) * rho^2 * (1 + (j - 2) * rho)) /
-                               (1 + (j - 1) * rho)^2)
+      errorVar <- sigma^2 * (1 - ((j - 1) * rho^2) /
+                               (1 + (j - 2) * rho))
       
       # Assign Y values 
-      # FIXME: NEED VARIANCES!!!
+      d[[paste0("epsilon", tp, ".0")]] <- rnorm(n, 0, sqrt(errorVar))
+      d[[paste0("epsilon", tp, ".1")]] <- rnorm(n, 0, sqrt(errorVar))
+      
       d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j - 1] *
         rowSums(as.matrix(d[, grep(previousYstring.0, names(d))], nrow = n)) +
         interceptMod[j - 1] * gammas[1] + 
         stage1CoefMod * (gammas[2] + gammas[3] * (-1)) +
-        rnorm(n, 0, sqrt(errorVar))
+        d[[paste0("epsilon", tp, ".0")]]
       
       d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j - 1] *
         rowSums(as.matrix(d[, grep(previousYstring.1, names(d))], nrow = n)) +
         interceptMod[j - 1] * gammas[1] +
         stage1CoefMod *
         (gammas[2] + gammas[3] * (1)) +
-        rnorm(n, 0, sqrt(errorVar))
+        d[[paste0("epsilon", tp, ".1")]]
     }
     
     # d[, paste0("Y", stage1times, ".0")] <-
@@ -184,8 +187,8 @@ generateStage1 <- function(n,
                          ]
   
   ## Generate response status
-  resp <- respFunction(d, gammas, r1, r0, respDirection, sigmaRespFunc,
-                       causal = T)
+  resp <- respFunction(d, spltime = spltime, gammas, r1, r0, respDirection,
+                       sigmaRespFunc, causal = T)
   d <- resp$data
   r1 <- resp$r1
   r0 <- resp$r0
@@ -224,6 +227,8 @@ generateStage1 <- function(n,
       "potentialData" = d,
       "r0" = r0,
       "r1" = r1,
+      "threshold0" = resp$threshold0,
+      "threshold1" = resp$threshold1,
       "rho" = rho,
       "sigma" = sigma
     )

@@ -1512,36 +1512,39 @@ response.sq <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
   return(list("data" = d, "r1" = r1, "r0" = r0))
 }
 
-response.twoT <- function(d, gammas, r1, r0, respDirection = c("high", "low"),
-                          sigmaY1, causal = F) {
+response.twoT <- function(d, spltime, gammas, r1, r0,
+                          respDirection = c("high", "low"),
+                          sigma, causal = F) {
   respDirection <- match.arg(respDirection)
   tail <- switch(respDirection, "high" = F, "low" = T)
   
-  if (length(sigmaY1) == 1) {
-    sigmaY1.1 <- sigmaY1.0 <- sigmaY1
-  } else if (length(sigmaY1) == 2) {
-    sigmaY1.0 <- sigmaY1[1]
-    sigmaY1.1 <- sigmaY1[2]
+  if (length(sigma) == 1) {
+    sigma.1 <- sigma.0 <- sigma
+  } else if (length(sigma) == 2) {
+    sigma.0 <- sigma[1]
+    sigma.1 <- sigma[2]
   } else {
-    warning("sigmaY1 can have length at most 2; ignoring subsequent elements.")
+    warning("sigma can have length at most 2; ignoring subsequent elements.")
   }
   
-  upsilon1 <- qnorm(r1, sum(gammas[1:3]), sigmaY1.1,
-                    lower.tail = tail)
-  upsilon0 <- qnorm(r0, sum(gammas[1:2]) - gammas[3], sigmaY1.0,
-                    lower.tail = tail)
+  mu.1 <- marginal.model( 1, NA, NA, spltime, spltime, NA, gammas)
+  mu.0 <- marginal.model(-1, NA, NA, spltime, spltime, NA, gammas)
+  
+  upsilon1 <- qnorm(r1, mu.1, sigma.1, lower.tail = tail)
+  upsilon0 <- qnorm(r0, mu.0, sigma.0, lower.tail = tail)
   
   if (causal) {
     d$R.1 <- d$R.0 <- NA
-    d$R.1 <- as.numeric(d$Y1.1 >= upsilon1)
-    d$R.0 <- as.numeric(d$Y1.0 >= upsilon0)
+    d$R.1 <- as.numeric(d[[paste0("Y", spltime, ".1")]] >= upsilon1)
+    d$R.0 <- as.numeric(d[[paste0("Y", spltime, ".0")]] >= upsilon0)
   } else {
     d$R <- NA
     d$R[d$A1 ==  1] <- as.numeric(d$Y1[d$A1 ==  1] >= upsilon1)
     d$R[d$A1 == -1] <- as.numeric(d$Y1[d$A1 == -1] >= upsilon0)
   }
   
-  return(list("data" = d, "r1" = r1, "r0" = r0))
+  return(list("data" = d, "r1" = r1, "r0" = r0, "threshold1" = upsilon1,
+              "threshold0" = upsilon0))
 }
 
 ### Wrapper for all the estimation functions
