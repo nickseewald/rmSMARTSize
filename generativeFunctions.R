@@ -225,12 +225,15 @@ generateStage1 <- function(n,
     list(
       "data" = dObs,
       "potentialData" = d,
+      "times" = times,
+      "Tstar" = spltime,
       "r0" = r0,
       "r1" = r1,
       "threshold0" = resp$threshold0,
       "threshold1" = resp$threshold1,
       "rho" = rho,
-      "sigma" = sigma
+      "sigma" = sigma,
+      "gammas" = gammas
     )
   
   class(output) <- c("generateStage1", class(output))
@@ -264,6 +267,12 @@ generateStage2.means <-
     dtrTriples <- dtrNames(design)
     
     dtrTxts <- do.call(rbind, DTRs)
+    
+    # Compute means conditional on response for stage-1 outcomes
+    # TODO: This only works for threshold response!
+    s1Means.R1 <- sapply(which(times <= spltime), function(i) {
+      mean_YjGivenYkR()
+    })
     
     # Replicate the "potential" response status variables for each DTR,
     # so that each DTR gets the appropriate potential response
@@ -824,3 +833,286 @@ checkVarGridValidity <- function(varGrid) {
   
   invalidSims
 }
+
+stage1_condMean <- function(stage1, a1, r, t, respFunction) {
+  respFunction <- match.fun(respFunction)
+  
+}
+
+stage1_condVar <- function(stage1, a1, r) {
+  # respFunction <- match.fun(respFunction)
+  message("You'd better be using a constant variance -- this is wrong otherwise")
+  if (!("generateStage1" %in% class(stage1)))
+    stop("stage1 must be an object produced by generateStage1()")
+  times <- stage1$times
+  Tstar <- stage1$Tstar
+  threshold <- stage1[[paste0("threshold", r)]]
+  sigma <- stage1$sigma[1,1]
+  
+  do.call('rbind',
+          lapply(1:sum(times <= Tstar), function(j) {
+            sapply(1:sum(times <= Tstar), function(k) {
+              
+              EYj <- integrate(Vectorize(function(yj) {
+                yj * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold,
+                                      sigma, stage1$rho, stage1$gammas)
+              }), lower = -Inf, upper = Inf)$value
+              
+              if (j == k) {
+                EYjSq <- integrate(Vectorize(function(yj) {
+                  yj^2 * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold, 
+                                          sigma, stage1$rho, 
+                                          stage1$gammas)
+                }), lower = -Inf, upper = Inf)$value
+                EYjSq - EYj^2
+              } else {
+                Eprod <- integrate(Vectorize(function(yk) {
+                  yk * mean_S1YjGivenYkR(yk, r, a1, j, k, times, Tstar, 
+                                         threshold, sigma, stage1$rho,
+                                         stage1$gammas) *
+                    .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
+                                     sigma, stage1$rho, stage1$gammas)
+                }), lower = -10, upper = 100)$value
+                EYk <- integrate(Vectorize(function(yk) {
+                  yk * .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
+                                        sigma, stage1$rho, stage1$gammas)
+                }), lower = -Inf, upper = Inf)$value
+                Eprod - EYj * EYk
+              }
+            })
+  }))
+}
+
+
+#### Density functions for computing conditional covariances ####
+
+#' Density function for Y given a thresholded response status
+#'
+#' @param x 
+#' @param a1 
+#' @param j 
+#' @param times 
+#' @param spltime 
+#' @param threshold 
+#' @param sigma 
+#' @param rho 
+#' @param gammas 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' @noRd
+.dS1GiventhreshR <- function(x, r, a1, j, times, spltime, threshold, sigma,
+                       rho, gammas) {
+  # the design argument doesn't matter for meanvec here since we're in stage 1
+  means <- meanvec(times, spltime, 2, gammas)
+  spltimeIndex <- which(spltime == times)
+  
+  if (j == spltimeIndex)
+    stop(paste("For j = which(times == spltime), don't use this function;",
+               "use a truncated normal distribution instead."))
+  
+  # Get the right column of means for the first-stage treatment a1 
+  a1Col <- (a1 == 1) * 1 + (a1 == -1) * 3
+  
+  # Mean of Y_t given Y_j
+  condMean <- means[spltimeIndex, a1Col] +
+    rho * (x - means[j, a1Col])
+  
+  # Variance of Y_t given Y_j
+  condVar <- sigma^2 * (1 - rho^2)
+  
+  # If conditioning on R = 1, use the upper tail of dist'n; lower tail otherwise
+  tail <- !(r == 1)
+  
+  dnorm(x, mean = means[j, a1Col], sd = sigma) *
+    pnorm(
+      threshold,
+      mean = condMean,
+      sd = sqrt(condVar),
+      lower.tail = tail
+    ) /
+    pnorm(threshold,
+          mean = means[spltimeIndex, a1Col],
+          sd = sigma,
+          lower.tail = tail)
+}
+
+#' Density of stage-1 outcome given response and another stage-1 outcome
+#'
+#' @param x value of Y_j for which you want the density
+#' @param y value of Y_k, the conditioned value
+#' @param a1 first-stage treatment
+#' @param j timepoint of x
+#' @param k timepoint of y
+#' @param times vector of times
+#' @param spltime T1
+#' @param threshold 
+#' @param sigma 
+#' @param rho 
+#' @param gammas 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+.dS1GivenS1threshR <-
+  function(x,
+           y,
+           r,
+           a1,
+           j,
+           k,
+           times,
+           spltime,
+           threshold,
+           sigma,
+           rho,
+           gammas) {
+    T1index <- which(times == spltime)
+    means <-
+      meanvec(times, spltime, 2, gammas)[c(T1index, j, k), 1]
+    
+    # probability of response given Y_j, Y_k
+    p_RgivenYjYk <- pnorm(
+      threshold,
+      mean = means[1] +
+        (x - means[2] + y - means[3]) * rho / (1 + rho),
+      sd = sigma * sqrt((1 + rho - 2 * rho^2) / (1 + rho)),
+      lower.tail = F
+    )
+    
+    # probability of response given Y_k
+    p_RgivenYk <- pnorm(
+      threshold,
+      mean = means[1] + rho * (y - means[3]),
+      sd = sigma * sqrt(1 - rho ^ 2),
+      lower.tail = F
+    )
+    
+    f_YkR <-
+      dnorm(y, mean = means[3], sd = sigma) * p_RgivenYk ^ r *
+      (1 - p_RgivenYk) ^ (1 - r)
+
+    
+    # the part of the density involving response
+    R_component <- p_RgivenYjYk ^ r * (1 - p_RgivenYjYk) ^ (1 - r) /
+      f_YkR
+    
+    # print(R_component)
+    
+    R_component *
+      dnorm(x,
+            mean = means[2] + rho * (y - means[3]),
+            sd = sigma * sqrt(1 - rho ^ 2)) *
+      dnorm(y, mean = means[3], sd = sigma)
+    }
+  }
+
+.dTstarGivenYkR <- function() {
+  #joint of all three divided by joint of Yk,R
+  
+}
+
+
+#' Compute the mean of a stage-1 outcome given response status
+#'
+#' @param j index of the timepoint for which you want to compute the mean
+#'   outcome; function computes $E[Y_{ij}^{(a_1)} \mid R_i^{(a_1)} = r]
+#' @param r response status to condition on; 0 or 1
+#' @param a1 first-stage treatment under which you want to compute the mean
+#' @param times vector of timepoints at which outcome is measured
+#' @param spltime t^*; the time immediately before re-randomization
+#' @param threshold cutoff point such that if Y_spltime > threshold, R = 1
+#' @param sigma marginal variance of Y_t for all t in times
+#' @param rho marginal cor(Y_j, Y_k) for all j,k
+#' @param gammas true regression parameters
+#'
+#' @return
+#' @export
+#'
+#' @examples
+mean_S1YjGivenR <-
+  function(j,
+           r,
+           a1,
+           times,
+           spltime,
+           threshold,
+           sigma,
+           rho,
+           gammas) {
+    
+    # check inputs
+    if (!(j %in% 1:length(times)))
+      stop(paste(
+        "j must be in 1:length(times);",
+        "did you provide the value instead of the index?"
+      )
+      )
+    if (!(r %in% c(0, 1))) 
+      stop("r must be either 0 or 1")
+    if (abs(a1) != 1)
+      stop("a1 must be either 1 or -1")
+    
+    integrate(
+      Vectorize(
+        function(x)
+          x * .dS1GiventhreshR(
+            x,
+            r = r,
+            a1 = a1,
+            j = j,
+            times = times,
+            spltime = spltime,
+            threshold = threshold,
+            sigma = sigma,
+            rho = rho,
+            gammas = gammas
+          ),
+        vectorize.args = "x"
+      ),
+      lower = -Inf,
+      upper = Inf
+    )$value
+  }
+
+
+mean_S1YjGivenYkR <-
+  function(yk,
+           r,
+           a1,
+           j,
+           k,
+           times,
+           spltime,
+           threshold,
+           sigma,
+           rho,
+           gammas) {
+    integrate(
+      Vectorize(
+        function(x)
+          x * .dS1GivenS1threshR(
+            x,
+            y = yk,
+            r = r,
+            a1 = a1,
+            j = j,
+            k = k,
+            times = times,
+            spltime = spltime,
+            threshold = threshold,
+            sigma = sigma,
+            rho = rho,
+            gammas = gammas
+          ),
+        vectorize.args = "x"
+      ),
+      lower = -Inf,
+      upper = Inf
+    )$value
+  }
+
+
