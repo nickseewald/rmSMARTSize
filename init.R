@@ -21,7 +21,8 @@
 check.rmpi  <- require(Rmpi)
 check.dompi <- require(doMPI)
 
-require(MASS)
+library(MASS)
+library(mvtnorm)
 library(doParallel)
 library(doRNG)
 library(slackr)
