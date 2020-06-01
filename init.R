@@ -23,6 +23,8 @@ check.dompi <- require(doMPI)
 
 library(MASS)
 library(mvtnorm)
+library(matrixcalc)
+library(Matrix)
 library(doParallel)
 library(doRNG)
 library(slackr)

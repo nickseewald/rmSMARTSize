@@ -81,6 +81,8 @@ generateStage1 <- function(n,
       stop("Currently the exchangeable structure can only handle a common sigma")
   }
   
+  respFunction <- match.fun(respFunction)
+  
   sigma <- reshapeSigma(sigma, times, design)
   
   ## Initialize data frame
@@ -236,7 +238,7 @@ generateStage1 <- function(n,
       "gammas" = gammas
     )
   
-  class(output) <- c("generateStage1", class(output))
+  class(output) <- c("SMARTstage1", class(output))
   return(output)
 }
 
@@ -249,8 +251,8 @@ generateStage2.means <-
            design,
            corstr = c("independence", "exchangeable", "ar1")) {
     
-    if (!("generateStage1") %in% class(stage1))
-      stop("'stage1' must be generated from 'generateStage1'")
+    if (!("SMARTstage1") %in% class(stage1))
+      stop("'stage1' must be the output of 'generateStage1()'")
     
     corstr <- match.arg(corstr)
     
@@ -363,7 +365,7 @@ generateStage2.means <-
         respMatrix * designMeanAdj.R + (1 - respMatrix) * designMeanAdj.NR
     } else if (corstr == "ar1") {
       # FIXME: This only works for time 2 right now! Any other time will not have 
-      # proper correlation structure
+      # proper correlation structure 
       warning("AR(1) data can only be reliably generated for three timepoints.")
       for (time in times[times > spltime]) {
         for (dtr in 1:nDTR) {
@@ -780,7 +782,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
   sg
 }
 
-createDTRIndicators <- function(d, design) {
+.createDTRIndicators <- function(d, design) {
   if (sum(c("A1", "A2R", "A2NR") %in% names(d)) != 3)
     stop("Must provide data from a SMART.")
   if (design == 1) {
@@ -844,12 +846,12 @@ stage1_condMean <- function(stage1, a1, r, t, respFunction) {
 stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
   # respFunction <- match.fun(respFunction)
   message("You'd better be using a constant variance -- this is wrong otherwise")
-  if (!("generateStage1" %in% class(stage1)))
-    stop("stage1 must be an object produced by generateStage1()")
+  if (!("SMARTstage1" %in% class(stage1)))
+    stop("'stage1' must be the output of 'generateStage1()'")
   # times <- stage1$times
   Tstar <- stage1$Tstar
   stage1Duration <- sum(times <= Tstar)
-  threshold <- stage1[[paste0("threshold", r)]]
+  threshold <- stage1[[paste0("threshold", (a1 + 1) / 2)]]
   sigma <- stage1$sigma[1,1]
   means <- meanvec(times, Tstar, 2, stage1$gammas)
   
@@ -858,80 +860,74 @@ stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
   
   # overallProgress <- txtProgressBar()
   
-  # do.call('rbind',
-          lapply(1:stage1Duration, function(j) {
-            sapply(j:stage1Duration, function(k) {
-              
-              cat(paste("j =", j, "k =", k, "\n"))
-              
-              lowerLim <- means[j, a1Col] - 5 * sigma
-              upperLim <- means[j, a1Col] + 5 * sigma
-              
-              EYj <- integrate(function(yj) {
-                yj * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold,
-                                      sigma, stage1$rho, stage1$gammas)
-              }, lower = lowerLim, upper = upperLim)$value
-              
-              if (j == k) {
-                EYjSq <- integrate(function(yj) {
-                  yj^2 * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold, 
-                                          sigma, stage1$rho, 
-                                          stage1$gammas)
-                }, lower = lowerLim, upper = upperLim)$value
-                EYjSq - EYj^2
-              } else {
-                Eprod <- integrate(function(yk) {
-                  yk * Vectorize(mean_S1YjGivenYkR,
-                                 vectorize.args = "yk")(
-                                   yk, r, a1, j, k, times,
-                                   Tstar, threshold, sigma, stage1$rho,
-                                   stage1$gammas
-                                 ) *
-                    .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
-                                     sigma, stage1$rho, stage1$gammas)
-                }, lower = lowerLim, upper = upperLim)$value
-                EYk <- integrate(function(yk) {
-                  yk * .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
-                                        sigma, stage1$rho, stage1$gammas)
-                }, lower = lowerLim, upper = upperLim)$value
-                Eprod - EYj * EYk
-              }
-            })
-          })
-  # )
+  result <- lapply(1:stage1Duration, function(j) {
+    sapply(j:stage1Duration, function(k) {
+      
+      cat(paste("j =", j, "k =", k, "\n"))
+      
+      lowerLim <- means[j, a1Col] - 5 * sigma
+      upperLim <- means[j, a1Col] + 5 * sigma
+      
+      EYj <- integrate(function(yj) {
+        yj * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold,
+                              sigma, stage1$rho, stage1$gammas)
+      }, lower = lowerLim, upper = upperLim)$value
+      
+      if (j == k) {
+        EYjSq <- integrate(function(yj) {
+          yj^2 * .dS1GiventhreshR(yj, r, a1, j, times, Tstar, threshold, 
+                                  sigma, stage1$rho, 
+                                  stage1$gammas)
+        }, lower = lowerLim, upper = upperLim)$value
+        EYjSq - EYj^2
+      } else {
+        Eprod <- integrate(function(yk) {
+          yk * Vectorize(mean_S1YjGivenYkR,
+                         vectorize.args = "yk")(
+                           yk, r, a1, j, k, times,
+                           Tstar, threshold, sigma, stage1$rho,
+                           stage1$gammas
+                         ) *
+            .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
+                             sigma, stage1$rho, stage1$gammas)
+        }, lower = lowerLim, upper = upperLim)$value
+        EYk <- integrate(function(yk) {
+          yk * .dS1GiventhreshR(yk, r, a1, k, times, Tstar, threshold,
+                                sigma, stage1$rho, stage1$gammas)
+        }, lower = lowerLim, upper = upperLim)$value
+        Eprod - EYj * EYk
+      }
+    })
+  })
+  
+  mtrx <- sapply(result, 
+                 function(x) matrix(c(rep(0, 5 - length(x)), x), ncol = 1))
+  
+  return(forceSymmetric(mtrx, uplo = "L"))
+  
 }
 
 
 ##### Density functions for computing conditional covariances #####
 
-#' Vectorized Truncated Bivariate Normal Density
-#' A vectorized version of dtmvnorm 
+#' Vectorized Bivariate Normal Density
+#' A vectorized version of dmvnorm 
 #'
-#' @param x vector of 
+#' @param x 
 #' @param y 
-#' @param ... 
+#' @param ... Other arguments to pass to dmvnorm
 #'
 #' @return
 #' @export
 #'
 #' @examples
-dtmvnorm_vec <- function(x, y, ...) {
+dmvnorm_vec <- function(x, y = NULL, ...) {
   xy <- cbind(x, y)
   sapply(1:nrow(xy),
          function(i) {
-           dtmvnorm(c(xy[i, 1], xy[i, 2]), ...)
+           dmvnorm(xy[i, ], ...)
          })
 }
-
-dmvnorm_vec <- function(x, y, ...) {
-  xy <- cbind(x, y)
-  sapply(1:nrow(xy),
-         function(i) {
-           dmvnorm(c(xy[i, 1], xy[i, 2]), ...)
-         })
-}
-
-
 
 #' Density function for Y given a thresholded response status
 #'
@@ -958,9 +954,16 @@ dmvnorm_vec <- function(x, y, ...) {
   # Get the right column of means for the first-stage treatment a1 
   a1Col <- (a1 == 1) * 1 + (a1 == -1) * 3
   
+  # If conditioning on R = 1, use the upper tail of dist'n; lower tail otherwise
+  tail <- !(r == 1)
+  
   if (j == TstarIndex){
-    return(Vectorize(dtmvnorm, vectorize.args = "x")(x, mean = means[TstarIndex, a1Col], sigma = sigma^2,
-             lower = threshold) * (x >= threshold))
+    return(
+      (x >= threshold) * 
+        dnorm(x, mean = means[TstarIndex, a1Col], sd = sigma) / 
+        pnorm(threshold, mean = means[TstarIndex, a1Col], sd = sigma,
+              lower.tail = tail)
+    )
   } else {
     # Mean of Y_t given Y_j
     condMean <- means[TstarIndex, a1Col] +
@@ -968,9 +971,6 @@ dmvnorm_vec <- function(x, y, ...) {
     
     # Variance of Y_t given Y_j
     condVar <- sigma^2 * (1 - rho^2)
-    
-    # If conditioning on R = 1, use the upper tail of dist'n; lower tail otherwise
-    tail <- !(r == 1)
     
     return(
       dnorm(x, mean = means[j, a1Col], sd = sigma) *
@@ -990,10 +990,15 @@ dmvnorm_vec <- function(x, y, ...) {
   }
 }
 
-#' Density of stage-1 outcome given response and another stage-1 outcome
-#'
-#' @param x value of Y_j for which you want the density
-#' @param y value of Y_k, the conditioned value
+#' Density of stage-1 outcome given threshold response and another stage-1 outcome
+#' Assuming that response status is a truncated version of Y_Tstar, the outcome
+#' observed immediately prior to re-randomization, the density of Y_j at yj  
+#' given Y_k = yk and R = r. 
+#' 
+#' @param yj value of Y_j for which you want the density
+#' @param yk value of Y_k, the conditioned value
+#' @param r level of response to condition on. Setting `r = 1` will condition on
+#' Y_Tstar >= threshold; `r = 0` conditions on Y_Tstar <= threshold.
 #' @param a1 first-stage treatment
 #' @param j timepoint of x
 #' @param k timepoint of y
@@ -1042,49 +1047,53 @@ dmvnorm_vec <- function(x, y, ...) {
       dnorm(y, mean = means[3], sd = sigma) * p_RgivenYk ^ r *
       (1 - p_RgivenYk) ^ (1 - r)
     
+    # Dividing dnorm_vec() by this term gives the truncated multivariate normal
+    # density; factor changes depending on response status and which timepoints
+    # are of interest
+    truncScaleFactor <- eval(parse(
+      text = paste0(
+        "pmvnorm(",
+        ifelse(r == 1, 'lower = ', 'upper = '),
+        "c(",
+        paste0(ifelse(k == TstarIndex, rev, identity)(c(
+          "threshold", "(-1)^r * Inf"
+        )), collapse = ", "),
+        ")",
+        ", mean = means[2:3],",
+        "sigma = sigma ^ 2 * cormat(rho, 2, 'exch'))"
+      )
+    ))
+    
     if (j == TstarIndex) {
-      if (x < threshold)
-        return(0)
-      else
-        return(
-          dmvnorm_vec(
-            x = x,
-            y = y,
-            mean = means[c(2, 3)],
-            sigma = sigma ^ 2 * cormat(rho, 2, "exch")
-          ) * p_R /
-            (f_YkR * pmvnorm(
-              lower = c(threshold,-Inf),
-              mean = means[c(2, 3)],
-              sigma = sigma ^ 2 * cormat(rho, 2, "exch")
-            ))
-        )
+      return(ifelse(
+        x < threshold,
+        0,
+        dmvnorm_vec(
+          x = x,
+          y = y,
+          mean = means[c(2, 3)],
+          sigma = sigma ^ 2 * cormat(rho, 2, "exch")
+        ) * p_R /
+          (f_YkR * truncScaleFactor)
+      ))
     } else if (k == TstarIndex) {
       # if conditioning on Tstar
-      if (y < threshold)
-        return(0)
-      else {
-        return(
-          dmvnorm_vec(
-            x = x,
-            y = y,
-            mean = means[2:3],
-            sigma = sigma ^ 2 * cormat(rho, 2, "exch")
-          ) * pnorm(
-            threshold,
-            mean = means[3],
-            sd = sigma,
-            lower.tail = F
-          ) /
-            (
-              pmvnorm(
-                lower = c(-Inf, threshold),
-                mean = means[2:3],
-                sigma = sigma ^ 2 * cormat(rho, 2, "exch")
-              ) * dnorm(y, mean = means[3], sd = sigma)
-            )
-        )
-      }
+      return(ifelse(
+        y < threshold,
+        0,
+        dmvnorm_vec(
+          x = x,
+          y = y,
+          mean = means[2:3],
+          sigma = sigma ^ 2 * cormat(rho, 2, "exch")
+        ) * pnorm(
+          threshold,
+          mean = means[3],
+          sd = sigma,
+          lower.tail = (r == 0)
+        ) /
+          (truncScaleFactor * dnorm(y, mean = means[3], sd = sigma))
+      ))
     } else {
       
       # probability of response given Y_j, Y_k
@@ -1093,7 +1102,7 @@ dmvnorm_vec <- function(x, y, ...) {
         mean = means[1] +
           (x - means[2] + y - means[3]) * rho / (1 + rho),
         sd = sigma * sqrt((1 + rho - 2 * rho^2) / (1 + rho)),
-        lower.tail = F
+        lower.tail = (r == 0)
       )
       
       # the part of the density involving response
@@ -1240,3 +1249,4 @@ mean_S1YjGivenYkR <-
       upper = Inf
     )$value
   }
+# 
