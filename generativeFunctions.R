@@ -808,6 +808,13 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
   return(d)
 }
 
+checkInputs <- function(a1, r) {
+  if (!any(a1 == c(-1, 1)))
+    stop(paste(sQuote("a1"), "must be either -1 or 1"))
+  if (!any(r == c(0, 1)))
+    stop(paste(sQuote("r"), "must be either 0 or 1"))
+}
+
 checkVarGridValidity <- function(varGrid) {
   invalidSims <- subset(varGrid, ((sigma.r0.LBa <= sigma.r0.LBf) |
                                            (sigma.r1.LBa <= sigma.r1.LBf) | 
@@ -844,6 +851,7 @@ stage1_condMean <- function(stage1, a1, r, t, respFunction) {
 }
 
 stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
+  checkInputs(a1, r)
   # respFunction <- match.fun(respFunction)
   message("You'd better be using a constant variance -- this is wrong otherwise")
   if (!("SMARTstage1" %in% class(stage1)))
@@ -1029,8 +1037,9 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
            gammas) {
     # message("only works with exchangeable/ corstr")
     TstarIndex <- which(times == Tstar)
+    a1Col <- (a1 == 1) * 1 + (a1 == -1) * 3
     means <-
-      meanvec(times, Tstar, 2, gammas)[c(TstarIndex, j, k), 1]
+      meanvec(times, Tstar, 2, gammas)[c(TstarIndex, j, k), a1Col]
     
     # probability of response
     p_R <- pnorm(threshold, mean = means[1], sd = sigma,
@@ -1212,18 +1221,6 @@ mean_S1YjGivenYkR <-
            sigma,
            rho,
            gammas) {
-    
-    a1Col <- (a1 == 1) * 1 + (a1 == -1) * 3
-    EYj <- meanvec(times, Tstar, 2, gammas)[j, a1Col]
-    TstarIndex <- which(times == Tstar)
-    
-    if (j == TstarIndex)
-      lowerLim <- threshold
-    else
-      lowerLim <- EYj - 5 * sigma
-    
-    upperLim <- EYj + 5 * sigma
-    
     integrate(
       function(x) {
         x * .dS1GivenS1threshR(
