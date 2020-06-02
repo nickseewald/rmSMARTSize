@@ -224,7 +224,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
     )
     
     # Add DTR indicators
-    d <- createDTRIndicators(d, design)
+    d <- .createDTRIndicators(d, design)
     
   } else {
     #### UPDATED GENERATIVE MODEL ####
@@ -236,9 +236,9 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
                         rho = rho, 
                         design = design,
                         respFunction = respFunction,
-                        respDirection, 
-                        balanceRand,
-                        empirical)
+                        respDirection = respDirection, 
+                        perfectAlloc = balanceRand,
+                        empirical = empirical)
     
     # Extract parameters from stage 1
     r0 <- d$r0
@@ -298,7 +298,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
       
       # Add DTR indicators
-      d <- createDTRIndicators(d, design)
+      d <- .createDTRIndicators(d, design)
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA
@@ -355,7 +355,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
       d$A2NR[d$R == 0] <- 2 * rbinom(sum(d$R == 0), 1, .5) - 1
       
       # Add DTR indicators
-      d <- createDTRIndicators(d, design)
+      d <- .createDTRIndicators(d, design)
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA
@@ -397,7 +397,7 @@ generateSMART <- function(n, times, spltime, r1, r0, gammas, lambdas, design,
         2 * rbinom(sum(d$R == 0 & d$A1 == 1), 1, .5) - 1
       
       # Add DTR indicators
-      d <- createDTRIndicators(d, design)
+      d <- .createDTRIndicators(d, design)
       
       # Select potential Y2 value to observe based on randomization
       d$Y2 <- NA

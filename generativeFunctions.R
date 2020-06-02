@@ -1072,6 +1072,23 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
       )
     ))
     
+    # Dividing dnorm_vec() by this term gives the truncated multivariate normal
+    # density; factor changes depending on response status and which timepoints
+    # are of interest
+    truncScaleFactor <- eval(parse(
+      text = paste0(
+        "pmvnorm(",
+        ifelse(r == 1, 'lower = ', 'upper = '),
+        "c(",
+        paste0(ifelse(k == TstarIndex, rev, identity)(c(
+          "threshold", "(-1)^r * Inf"
+        )), collapse = ", "),
+        ")",
+        ", mean = means[2:3],",
+        "sigma = sigma ^ 2 * cormat(rho, 2, 'exch'))"
+      )
+    ))
+    
     if (j == TstarIndex) {
       return(ifelse(
         eval(parse(text = paste("x", ifelse(r == 1, "<", ">"), "threshold"))),
