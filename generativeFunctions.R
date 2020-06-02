@@ -959,7 +959,7 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
   
   if (j == TstarIndex){
     return(
-      (x >= threshold) * 
+      eval(parse(text = paste0("x", ifelse(r == 1, ">=", "<="), "threshold"))) * 
         dnorm(x, mean = means[TstarIndex, a1Col], sd = sigma) / 
         pnorm(threshold, mean = means[TstarIndex, a1Col], sd = sigma,
               lower.tail = tail)
@@ -1033,19 +1033,18 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
       meanvec(times, Tstar, 2, gammas)[c(TstarIndex, j, k), 1]
     
     # probability of response
-    p_R <- pnorm(threshold, mean = means[1], sd = sigma, lower.tail = !(r == 1))
+    p_R <- pnorm(threshold, mean = means[1], sd = sigma,
+                 lower.tail = (r == 0))
     
     # probability of response given Y_k
     p_RgivenYk <- pnorm(
       threshold,
       mean = means[1] + rho * (y - means[3]),
       sd = sigma * sqrt(1 - rho ^ 2),
-      lower.tail = F
+      lower.tail = (r == 0)
     )
     
-    f_YkR <-
-      dnorm(y, mean = means[3], sd = sigma) * p_RgivenYk ^ r *
-      (1 - p_RgivenYk) ^ (1 - r)
+    f_YkR <- dnorm(y, mean = means[3], sd = sigma) * p_RgivenYk
     
     # Dividing dnorm_vec() by this term gives the truncated multivariate normal
     # density; factor changes depending on response status and which timepoints
@@ -1066,36 +1065,36 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
     
     if (j == TstarIndex) {
       return(ifelse(
-        x < threshold,
+        eval(parse(text = paste("x", ifelse(r == 1, "<", ">"), "threshold"))),
         0,
         dmvnorm_vec(
           x = x,
           y = y,
           mean = means[c(2, 3)],
-          sigma = sigma ^ 2 * cormat(rho, 2, "exch")
+          sigma = sigma^2 * cormat(rho, 2, "exch")
         ) * p_R /
           (f_YkR * truncScaleFactor)
       ))
     } else if (k == TstarIndex) {
       # if conditioning on Tstar
-      return(ifelse(
-        y < threshold,
-        0,
-        dmvnorm_vec(
-          x = x,
-          y = y,
-          mean = means[2:3],
-          sigma = sigma ^ 2 * cormat(rho, 2, "exch")
-        ) * pnorm(
-          threshold,
-          mean = means[3],
-          sd = sigma,
-          lower.tail = (r == 0)
-        ) /
-          (truncScaleFactor * dnorm(y, mean = means[3], sd = sigma))
-      ))
+      if (eval(parse(text = paste("y", ifelse(r == 1, "<", ">"), "threshold"))))
+        return(rep(0, length(x)))
+      else
+        return(
+          dmvnorm_vec(
+            x = x,
+            y = y,
+            mean = means[2:3],
+            sigma = sigma^2 * cormat(rho, 2, "exch")
+          ) * pnorm(
+            threshold,
+            mean = means[3],
+            sd = sigma,
+            lower.tail = (r == 0)
+          ) /
+            (truncScaleFactor * dnorm(y, mean = means[3], sd = sigma))
+        )
     } else {
-      
       # probability of response given Y_j, Y_k
       p_RgivenYjYk <- pnorm(
         threshold,
@@ -1104,10 +1103,6 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
         sd = sigma * sqrt((1 + rho - 2 * rho^2) / (1 + rho)),
         lower.tail = (r == 0)
       )
-      
-      # the part of the density involving response
-      R_component <- p_RgivenYjYk ^ r * (1 - p_RgivenYjYk) ^ (1 - r) /
-        f_YkR
       
       # print(R_component)
       # cat("\n")
@@ -1120,13 +1115,13 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
       # print(dnorm(y, mean = means[3], sd = sigma))
       
       return(
-        R_component *
+        p_RgivenYjYk *
           dnorm(
             x,
             mean = means[2] + rho * (y - means[3]),
             sd = sigma * sqrt(1 - rho ^ 2)
           ) *
-          dnorm(y, mean = means[3], sd = sigma)
+          dnorm(y, mean = means[3], sd = sigma) /  f_YkR
       )
     }
   }
@@ -1245,7 +1240,7 @@ mean_S1YjGivenYkR <-
           rho = rho,
           gammas = gammas
         )},
-      lower = lowerLim,
+      lower = -Inf,
       upper = Inf
     )$value
   }
