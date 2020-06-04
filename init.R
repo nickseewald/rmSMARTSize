@@ -51,6 +51,17 @@ if (check.dompi) {
   clus <- makeCluster(ncore, 
                       outfile = here("outFiles",
                                           paste0("log", Sys.Date(), ".txt")))
+  clusterExport(clus, varlist = ls())
+  clusterExport(clus, varlist = c(".dS1GiventhreshR", "dS1GivenS1threshR"))
+  clusterEvalQ(clus, {library(MASS)
+    library(mvtnorm)
+    library(matrixcalc)
+    library(Matrix)
+    library(doParallel)
+    library(doRNG)
+    library(slackr)
+    library(xtable)
+    library(here)})
 }
 
 if (check.dompi) {

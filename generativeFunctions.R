@@ -867,13 +867,16 @@ stage1_condMean <- function(stage1, a1, r, t, respFunction) {
 stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
   checkInputs(a1, r)
   
+  timepoints <- stage1$times
+  Tstar <- stage1$Tstar
+  
   if (is.vector(times)) {
     # Get indices for the timepoints of interest inside of stage1$times
-    indices <- which(stage1$times %in% times)
+    indices <- which(stage1$times %in% times[times <= Tstar])
     indices <- indices[order(indices)]
-    tmat <- unname(expand.grid(indices, indices))
+    tmat <- expand.grid(indices, indices)
     tmat <- tmat[tmat[, 1] <= tmat[, 2], ]
-    tmat <- as.matrix(tmat)
+    tmat <- unname(as.matrix(tmat))
   } else if (is.matrix(times)) {
     if (ncol(times) != 2)
       stop(paste(sQuote(times), "must have exactly 2 columns"))
@@ -893,11 +896,10 @@ stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
   if (!("SMARTstage1" %in% class(stage1)))
     stop("'stage1' must be the output of 'generateStage1()'")
   
-  print(tmat)
-  print(is(tmat))
+  # print(tmat)
+  # print(is(tmat))
   
-  timepoints <- stage1$times
-  Tstar <- stage1$Tstar
+  
   
   stage1Duration <- sum(timepoints <= Tstar)
   threshold <- stage1[[paste0("threshold", (a1 + 1) / 2)]]
@@ -906,14 +908,21 @@ stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
   # Get the right column of means for the first-stage treatment a1 
   a1Col <- (a1 == 1) * 1 + (a1 == -1) * 3
   
-  result <- lapply(1:nrow(tmat), function(i) {
+  clusterExport(cl = clus,
+                varlist = c("stage1", "r", "a1", "times", "timepoints", "Tstar",
+                            "threshold", "means", "a1Col", "tmat"), 
+                envir = environment())
+  
+  result <- parLapplyLB(clus, 1:nrow(tmat), function(i) {
     # sapply(tmat[, 2], function(k) {
     
     j <- tmat[i, 1]
     k <- tmat[i, 2]
     
-    lowerLim <- means[j, a1Col] - 5 * sigma
-    upperLim <- means[j, a1Col] + 5 * sigma
+    cat(paste0("j = ", j, ", k = ", k, "\n"))
+    
+    lowerLim <- means[j, a1Col] - 5 * stage1$sigma[j, a1Col]
+    upperLim <- means[j, a1Col] + 5 * stage1$sigma[j, a1Col]
     
     EYj <- integrate(function(yj) {
       yj * .dS1GiventhreshR(yj, r, a1, j, stage1)
@@ -951,9 +960,6 @@ stage1_condVar <- function(stage1, a1, r, times = stage1$times) {
     names(result) <- apply(times, 1, function(x) paste0(x, collapse = ""))
     return(result)
   }
-  
-  
-  
 }
 
 
@@ -1014,7 +1020,7 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
   } else {
     # Mean of Y_t given Y_j
     condMean <- means[TstarIndex, a1Col] +
-      rho * (x - means[j, a1Col])
+      stage1$rho * (x - means[j, a1Col])
     
     # Variance of Y_t given Y_j
     condVar <- stage1$sigma[j, a1Col]^2 * (1 - stage1$rho^2)
@@ -1089,7 +1095,7 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
     p_RgivenYk <- pnorm(
       threshold,
       mean = means[1] + stage1$rho * (y - means[3]),
-      sd = stage1$sigma[k, a1Col] * sqrt(1 - rho ^ 2),
+      sd = stage1$sigma[k, a1Col] * sqrt(1 - stage1$rho ^ 2),
       lower.tail = (r == 0)
     )
     
@@ -1148,9 +1154,9 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
       p_RgivenYjYk <- pnorm(
         threshold,
         mean = means[1] +
-          (x - means[2] + y - means[3]) * rho / (1 + rho),
+          (x - means[2] + y - means[3]) * stage1$rho / (1 + stage1$rho),
         sd = stage1$sigma[TstarIndex, a1Col] * 
-          sqrt((1 + rho - 2 * rho^2) / (1 + rho)),
+          sqrt((1 + stage1$rho - 2 * stage1$rho^2) / (1 + stage1$rho)),
         lower.tail = (r == 0)
       )
       
@@ -1158,8 +1164,8 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
       # cat("\n")
       # print(R_component * dnorm(
       #   x,
-      #   mean = means[2] + rho * (y - means[3]),
-      #   sd = sigma * sqrt(1 - rho ^ 2)
+      #   mean = means[2] + stage1$rho * (y - means[3]),
+      #   sd = sigma * sqrt(1 - stage1$rho ^ 2)
       # ))
       # cat("\n")
       # print(dnorm(y, mean = means[3], sd = sigma))
@@ -1168,7 +1174,7 @@ dmvnorm_vec <- function(x, y = NULL, ...) {
         p_RgivenYjYk *
           dnorm(
             x,
-            mean = means[2] + rho * (y - means[3]),
+            mean = means[2] + stage1$rho * (y - means[3]),
             sd = stage1$sigma[j, a1Col] * sqrt(1 - stage1$rho^2)
           ) *
           dnorm(y, mean = means[3], sd = stage1$sigma[k, a1Col]) /  f_YkR

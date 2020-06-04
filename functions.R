@@ -675,26 +675,26 @@ conditionalVarmat <- function(times, spltime, design, r1, r0,
   condVarmats
 }
 
-### Construct a t-by-t correlation matrix
+### Construct a p-by-p correlation matrix
 cormat <-
   function(rho,
-           t,
+           p,
            corstr = c("independence", "exchangeable", "ar1", "unstructured")) {
     corstr <- match.arg(corstr)
     if (corstr == "independence") {
-      diag(rep(1, t))
+      diag(rep(1, p))
     } else if (corstr == "exchangeable") {
-      m <- matrix(rep(rho, t ^ 2), nrow = t)
-      diag(m) <- rep(1, t)
+      m <- matrix(rep(rho, p ^ 2), nrow = p)
+      diag(m) <- rep(1, p)
       m
     } else if (corstr == "ar1") {
-      m <- diag(t)
+      m <- diag(p)
       rho ^ (abs(row(m) - col(m)))
     } else if (corstr == "unstructured") {
-      if (length(rho) != t)
+      if (length(rho) != p)
         stop("for unstructured corstr, must have rho of length t")
       m <- diag(3)
-      tpairs <- combn(1:t, 2)
+      tpairs <- combn(1:p, 2)
       for (j in 1:ncol(tpairs)) {
         m[tpairs[1, j], tpairs[2, j]] <-
           m[tpairs[2, j], tpairs[1, j]] <- rho[j]
