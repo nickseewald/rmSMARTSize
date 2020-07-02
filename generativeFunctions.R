@@ -107,14 +107,14 @@ generateStage1 <- function(n,
   for (tp in stage1times) {
     # For each timepoint, get all timepoints prior
     # (note that baseline gets left out for now -- dif. naming convention)
-    prevTimes <- stage1times[stage1times < tp]
+    prevTimes <- times[times < tp]
     
     # Get the names of the Y's corresponding to those previous times
     # Below, we construct regular expressions to search for variables named
     # according to the convention Y(time).(stage1treatment), e.g., Y2.1 is 
     # the Y variable at time 2 under A1 = 1. The regex includes baseline
     # and all times prior to (but not including) tp
-    if (length(prevTimes) != 0) {
+    if (length(prevTimes) != 1) {
       prevYstring0 <- 
         paste0("Y(", times[1], "|(",
                paste(prevTimes, collapse = "\\.0|"),
@@ -144,21 +144,21 @@ generateStage1 <- function(n,
       prevTimeCoefs1 %*% covar1[1:(j-1), 1:(j-1)] %*% prevTimeCoefs1
     
     # Assign Y values 
-    d[[paste0("epsilon", tp, ".0")]] <- rnorm(n, 0, sqrt(errorVar))
-    d[[paste0("epsilon", tp, ".1")]] <- rnorm(n, 0, sqrt(errorVar))
+    d[[paste0("epsilon", tp, ".0")]] <- rnorm(n, 0, sqrt(errorVar0))
+    d[[paste0("epsilon", tp, ".1")]] <- rnorm(n, 0, sqrt(errorVar1))
     
     d[[paste0("Y", tp, ".0")]] <-
       rowSums(t(t(as.matrix(d[, grep(prevYstring0, names(d))], nrow = n))
                 * prevTimeCoefs0)) +
       (1 - sum(prevTimeCoefs0)) * gammas[1] +
-      (1 - sum(prevTimeCoefs0 * prevTimes) / tp) * (gammas[2] - gammas[3]) +
+      ((1 - sum(prevTimeCoefs0 * prevTimes)) / tp) * (gammas[2] - gammas[3]) +
       d[[paste0("epsilon", tp, ".0")]]
     
     d[[paste0("Y", tp, ".1")]] <-
       rowSums(t(t(as.matrix(d[, grep(prevYstring1, names(d))], nrow = n))
                 * prevTimeCoefs1)) +
       (1 - sum(prevTimeCoefs1)) * gammas[1] +
-      (1 - sum(prevTimeCoefs1 * prevTimes) / tp) * (gammas[2] + gammas[3]) +
+      ((1 - sum(prevTimeCoefs1 * prevTimes)) / tp) * (gammas[2] + gammas[3]) +
       d[[paste0("epsilon", tp, ".1")]]
   }
   
