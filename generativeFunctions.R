@@ -83,121 +83,101 @@ generateStage1 <- function(n,
   
   respFunction <- match.fun(respFunction)
   
+  # Turn sigma into a length(times)-by-nDTR matrix if not already; 
   sigma <- reshapeSigma(sigma, times, design)
   
-  ## Initialize data frame
+  # Create covariance matrices for each first-stage treatment
+  covar0 <- 
+    diag(sigma[, 3]) %*% cormat(rho, length(times), corstr) %*% diag(sigma[, 3])
+  covar1 <- 
+    diag(sigma[, 1]) %*% cormat(rho, length(times), corstr) %*% diag(sigma[, 1])
+  
+  
+  ## Initialize data frame ##
   d <- data.frame("id" = 1:n)
   
-  ## Generate baseline outcome
+  ## Generate baseline outcome ##
   d[[paste0("epsilon", times[1])]] <- rnorm(n, 0, sigma[1, 1])
   d[[paste0("Y", times[1])]] <- gammas[1] + d[[paste0("epsilon", times[1])]]
   
-  ## Generate observed treatment assignment
-  
-  ## Generate stage 1 potential outcomes
+  ## Generate stage 1 potential outcomes ##
   stage1times <- times[times > times[1] & times <= spltime]
   
-  if (any(corstr == c("exchangeable", "independence"))) {
-    pastYCoefs <-
-      sapply(2:(length(stage1times) + 1), function(j)
-        rho / (1 + (j - 2) * rho))
+  # Loop over timepoints in the first stage *after* treatment assignment
+  for (tp in stage1times) {
+    # For each timepoint, get all timepoints prior
+    # (note that baseline gets left out for now -- dif. naming convention)
+    prevTimes <- stage1times[stage1times < tp]
     
-    interceptMod <-
-     sapply(2:(length(stage1times) + 1), function(j)
-        (1 - rho) / (1 + (j - 2) * rho))
-    
-    # Loop over timepoints in the first stage *after* treatment assignment
-    for (tp in stage1times) {
-      # For each timepoint, get all timepoints prior
-      # (note that baseline gets left out for now -- dif. naming convention)
-      previousTimes <- stage1times[stage1times < tp]
-      
-      # Get the names of the Y's corresponding to those previous times
-      # Below, we construct regular expressions to search for variables named
-      # according to the convention Y(time).(stage1treatment), e.g., Y2.1 is 
-      # the Y variable at time 2 under A1 = 1. The regex includes baseline
-      # and all times prior to tp
-      if (length(previousTimes) != 0) {
-        previousYstring.0 <- 
-          paste0("Y(", times[1], "|(",
-                 paste(previousTimes, collapse = "\\.0|"),
-                 "\\.0))")
-        previousYstring.1 <- 
-          paste0("Y(", times[1], "|(", 
-                 paste(previousTimes, collapse = "\\.1|"),
-                 "\\.1))")
-      } else {
-        # if only baseline exists prior to the current timepoint, use only that
-        previousYstring.0 <- previousYstring.1 <- paste0("Y", times[1])
-      }
-      
-      # j is the index of the timepoint (overall)
-      j <- which(tp == times)
-      
-      # Need to account for the fact that the math is based on setting baseline
-      # as timepoint 1, but j is artificially inflated here (i.e., baseline is
-      # coded as 0 here)
-      stage1CoefMod <- tp - (rho / (1 + (j - 2) * rho)) * 
-        sum(c(times[1], previousTimes))
-
-      errorVar <- sigma^2 * (1 - ((j - 1) * rho^2) /
-                               (1 + (j - 2) * rho))
-      
-      # Assign Y values 
-      d[[paste0("epsilon", tp, ".0")]] <- rnorm(n, 0, sqrt(errorVar))
-      d[[paste0("epsilon", tp, ".1")]] <- rnorm(n, 0, sqrt(errorVar))
-      
-      d[[paste0("Y", tp, ".0")]] <- pastYCoefs[j - 1] *
-        rowSums(as.matrix(d[, grep(previousYstring.0, names(d))], nrow = n)) +
-        interceptMod[j - 1] * gammas[1] + 
-        stage1CoefMod * (gammas[2] + gammas[3] * (-1)) +
-        d[[paste0("epsilon", tp, ".0")]]
-      
-      d[[paste0("Y", tp, ".1")]] <-pastYCoefs[j - 1] *
-        rowSums(as.matrix(d[, grep(previousYstring.1, names(d))], nrow = n)) +
-        interceptMod[j - 1] * gammas[1] +
-        stage1CoefMod *
-        (gammas[2] + gammas[3] * (1)) +
-        d[[paste0("epsilon", tp, ".1")]]
+    # Get the names of the Y's corresponding to those previous times
+    # Below, we construct regular expressions to search for variables named
+    # according to the convention Y(time).(stage1treatment), e.g., Y2.1 is 
+    # the Y variable at time 2 under A1 = 1. The regex includes baseline
+    # and all times prior to (but not including) tp
+    if (length(prevTimes) != 0) {
+      prevYstring0 <- 
+        paste0("Y(", times[1], "|(",
+               paste(prevTimes, collapse = "\\.0|"),
+               "\\.0))")
+      prevYstring1 <- 
+        paste0("Y(", times[1], "|(", 
+               paste(prevTimes, collapse = "\\.1|"),
+               "\\.1))")
+    } else {
+      # if only baseline exists prior to the current timepoint, use only that
+      prevYstring0 <- prevYstring1 <- paste0("Y", times[1])
     }
     
-    # d[, paste0("Y", stage1times, ".0")] <-
-    #   (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] - gammas[3] + 
-    #   rnorm(n, 0, sqrt((1-rho^2))*sigma)
-    # d[, paste0("Y", stage1times, ".1")] <-
-    #   (1-rho)*gammas[1] + rho*d$Y0 + gammas[2] + gammas[3] + 
-    #   rnorm(n, 0, sqrt((1-rho^2))*sigma)
-  } else if (corstr == "ar1") {
-    # FIXME: This only works for time 1 right now! Any other time will not have 
-    # proper correlation structure
-    for (time in times[times > 0 & times <= spltime]) {
-      corrT <- rho^(time - times[1])
-      d[[paste0("Y", time, ".0")]] <- (1-corrT)*gammas[1] + corrT*d$Y0 +
-        gammas[2] - gammas[3] + rnorm(n, 0, sqrt((1-corrT^2))*sigma)
-      d[[paste0("Y", time, ".1")]] <- (1-corrT)*gammas[1] + corrT*d$Y0 +
-        gammas[2] + gammas[3] + rnorm(n, 0, sqrt((1-corrT^2))*sigma)
-    }
-  } else {
-    warning("Y1 not created")
+    # j is the index of the timepoint (overall)
+    j <- which(tp == times)
+    
+    # Compute coefficients which need to be multiplied by prior observations
+    # in order to induce desired corstr; separated by first-stage treatment
+    prevTimeCoefs0 <-
+      solve(covar0[1:(j - 1), 1:(j - 1)], as.vector(covar0[1:(j - 1),j]))
+    prevTimeCoefs1 <-
+      solve(covar1[1:(j - 1), 1:(j - 1)], as.vector(covar1[1:(j - 1),j]))
+    
+    errorVar0 <- covar0[j, j] - 
+      prevTimeCoefs0 %*% covar0[1:(j-1), 1:(j-1)] %*% prevTimeCoefs0
+    errorVar1 <- covar1[j, j] - 
+      prevTimeCoefs1 %*% covar1[1:(j-1), 1:(j-1)] %*% prevTimeCoefs1
+    
+    # Assign Y values 
+    d[[paste0("epsilon", tp, ".0")]] <- rnorm(n, 0, sqrt(errorVar))
+    d[[paste0("epsilon", tp, ".1")]] <- rnorm(n, 0, sqrt(errorVar))
+    
+    d[[paste0("Y", tp, ".0")]] <-
+      rowSums(t(t(as.matrix(d[, grep(prevYstring0, names(d))], nrow = n))
+                * prevTimeCoefs0)) +
+      (1 - sum(prevTimeCoefs0)) * gammas[1] +
+      (1 - sum(prevTimeCoefs0 * prevTimes) / tp) * (gammas[2] - gammas[3]) +
+      d[[paste0("epsilon", tp, ".0")]]
+    
+    d[[paste0("Y", tp, ".1")]] <-
+      rowSums(t(t(as.matrix(d[, grep(prevYstring1, names(d))], nrow = n))
+                * prevTimeCoefs1)) +
+      (1 - sum(prevTimeCoefs1)) * gammas[1] +
+      (1 - sum(prevTimeCoefs1 * prevTimes) / tp) * (gammas[2] + gammas[3]) +
+      d[[paste0("epsilon", tp, ".1")]]
   }
   
+  ## Generate response status ##
   sigmaRespFunc <- sigma[which(times == spltime),
                          sapply(unique(substr(dtrNames(design), 1, 1)),
                                 function(x)
                                   min(which(x == substr(dtrNames(design), 1, 1)))
-                                )
-                         ]
+                         )
+  ]
   
-  ## Generate response status
   resp <- respFunction(d, spltime = spltime, gammas, r1, r0, respDirection,
                        sigmaRespFunc, causal = T)
   d <- resp$data
   r1 <- resp$r1
   r0 <- resp$r0
   
-  ## "Observe" data by randomizing first-stage Tx and selecting appropriate
-  ## potential outcomes
-  
+  ## "Observe" data by randomizing first-stage treatment and selecting
+  ## appropriate potential outcomes
   dObs <- data.frame("id" = d$id)
   dObs[[paste0("Y", times[1])]] <- d[[paste0("Y", times[1])]]
   
@@ -330,7 +310,7 @@ generateStage2.means <-
       designMeanAdj.R <- matrix(rep(
         (1 - respProbVec) * (lambdas[1] + lambdas[2] * dtrTxts[1, ]),
         n
-        ), nrow = n, byrow = T)
+      ), nrow = n, byrow = T)
       
       designMeanAdj.NR <- matrix(rep(
         gammas[6] * as.numeric(dtrTxts[1, ] == 1) * dtrTxts[3, ] / 
@@ -389,6 +369,7 @@ generateStage2.means <-
     }
     d
   }
+
 
 
 generateStage2.var <- function() {
@@ -463,7 +444,7 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
                             corstr = c("independence", "exchangeable", "ar1"),
                             bound = c("lower", "upper"),
                             boundType = c("feasibility", "assumption")) {
- 
+  
   bound     <- match.arg(bound)
   boundType <- match.arg(boundType)
   corstr    <- match.arg(corstr)
@@ -554,9 +535,9 @@ computeVarBound <- function(a1, d, design, sigma, r, rho = 0, times,
     }
   } else {
     sqrt((sigma[3, dtrCol1]^2 / r) - (1 - r) * 
-          max(c(
-            (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2, 
-            (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2))
+           max(c(
+             (mean(Y2.R.dtr1) - mean(Y2.NR.dtr1))^2, 
+             (mean(Y2.R.dtr2) - mean(Y2.NR.dtr2))^2))
          - stage1var)
   }
 }
@@ -589,7 +570,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
                            empirical = F, seed = 6781) {
   
   corstr <- match.arg(corstr)
-    
+  
   if (is.list(varCombine) & length(varCombine) == 2) {
     varCombine.11 <- varCombine[[1]]
     varCombine.00 <- varCombine[[2]]
@@ -668,7 +649,7 @@ computeVarGrid <- function(simGrid, times, spltime, gammas, sigma,
     # On the other hand, the upper bound is a hard limit -- going over this
     # value will produce errors
     sigma.r0.LBf <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr,
-                                   bound = "lower", boundType = "feasibility")
+                                    bound = "lower", boundType = "feasibility")
     sigma.r0.LBa <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr,
                                     bound = "lower", boundType = "assumption")
     sigma.r0.UB <- computeVarBound(0, s, design, sigma, r0, rho, times, corstr, 
@@ -817,9 +798,9 @@ checkInputs <- function(a1, r) {
 
 checkVarGridValidity <- function(varGrid) {
   invalidSims <- subset(varGrid, ((sigma.r0.LBa <= sigma.r0.LBf) |
-                                           (sigma.r1.LBa <= sigma.r1.LBf) | 
-                                           (sigma.r0.UB <= sigma.r0.LBf) |
-                                           (sigma.r1.UB <= sigma.r1.LBf)),
+                                    (sigma.r1.LBa <= sigma.r1.LBf) | 
+                                    (sigma.r0.UB <= sigma.r0.LBf) |
+                                    (sigma.r1.UB <= sigma.r1.LBf)),
                         select = "simName")
   
   if (nrow(invalidSims) == 0)
