@@ -151,14 +151,14 @@ generateStage1 <- function(n,
       rowSums(t(t(as.matrix(d[, grep(prevYstring0, names(d))], nrow = n))
                 * prevTimeCoefs0)) +
       (1 - sum(prevTimeCoefs0)) * gammas[1] +
-      ((1 - sum(prevTimeCoefs0 * prevTimes)) / tp) * (gammas[2] - gammas[3]) +
+      (tp - sum(prevTimeCoefs0 * prevTimes)) * (gammas[2] - gammas[3]) +
       d[[paste0("epsilon", tp, ".0")]]
     
     d[[paste0("Y", tp, ".1")]] <-
       rowSums(t(t(as.matrix(d[, grep(prevYstring1, names(d))], nrow = n))
                 * prevTimeCoefs1)) +
       (1 - sum(prevTimeCoefs1)) * gammas[1] +
-      ((1 - sum(prevTimeCoefs1 * prevTimes)) / tp) * (gammas[2] + gammas[3]) +
+      (tp - sum(prevTimeCoefs1 * prevTimes))  * (gammas[2] + gammas[3]) +
       d[[paste0("epsilon", tp, ".1")]]
   }
   
